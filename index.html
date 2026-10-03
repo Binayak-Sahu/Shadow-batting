@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0a0e14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Shadow">
+<meta name="description" content="Shadow batting trainer — burn in the trigger, footwork, and swing chain through repetition.">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Shadow Batting","short_name":"Shadow","description":"Technique repetition trainer for shadow batting","start_url":"./","scope":"./","display":"standalone","orientation":"portrait","background_color":"%230a0e14","theme_color":"%230a0e14","icons":[{"src":"data:image/svg%2Bxml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 512 512%27%3E%3Crect width=%27512%27 height=%27512%27 rx=%27112%27 fill=%27%230a0e14%27/%3E%3Ccircle cx=%27370%27 cy=%27140%27 r=%2748%27 fill=%27%23fb7185%27/%3E%3Crect x=%27150%27 y=%27130%27 width=%2732%27 height=%27300%27 rx=%2716%27 fill=%27%23e8edf3%27 transform=%27rotate(-28 166 280)%27/%3E%3Crect x=%27105%27 y=%2765%27 width=%2732%27 height=%2790%27 rx=%2716%27 fill=%27%23fbbf24%27 transform=%27rotate(-28 121 110)%27/%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml","purpose":"any"}]}'>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%230a0e14'/%3E%3Ccircle cx='370' cy='140' r='48' fill='%23fb7185'/%3E%3Crect x='150' y='130' width='32' height='300' rx='16' fill='%23e8edf3' transform='rotate(-28 166 280)'/%3E%3Crect x='105' y='65' width='32' height='90' rx='16' fill='%23fbbf24' transform='rotate(-28 121 110)'/%3E%3C/svg%3E">
+<title>Shadow Batting</title>
+<style>
+:root{
+  --bg:#0a0e14;
+  --bg2:#0f141c;
+  --card:#131a24;
+  --card2:#1a222e;
+  --line:#222c3a;
+  --line2:#2c3849;
+  --txt:#e8edf3;
+  --dim:#6b7785;
+  --dim2:#4a5563;
+
+  --learn:#a78bfa;
+  --learn-bg:rgba(167,139,250,.12);
+  --groove:#2dd4bf;
+  --groove-bg:rgba(45,212,191,.12);
+  --test:#fb7185;
+  --test-bg:rgba(251,113,133,.12);
+
+  --release:#fbbf24;
+  --line-c:#38bdf8;
+  --hit:#fb7185;
+  --done:#22c55e;
+
+  --safe-t:env(safe-area-inset-top);
+  --safe-b:env(safe-area-inset-bottom);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg);
+  color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+  font-size:15px;
+  line-height:1.4;
+  -webkit-font-smoothing:antialiased;
+  display:flex;flex-direction:column;
+  min-height:100dvh;
+  overflow:hidden;
+  user-select:none;-webkit-user-select:none;
+  overscroll-behavior:none;
+}
+
+/* ---------- APP SHELL ---------- */
+.app{
+  display:flex;flex-direction:column;
+  height:100dvh;
+  padding:calc(var(--safe-t) + 8px) 18px calc(var(--safe-b) + 12px);
+}
+
+/* ---------- TOP BAR ---------- */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:4px 2px 14px;
+  flex-shrink:0;
+}
+.brand{
+  display:flex;align-items:center;gap:9px;
+}
+.brand-dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--learn);
+  box-shadow:0 0 12px var(--learn);
+  transition:.35s;
+}
+.brand-name{
+  font-size:12px;font-weight:800;letter-spacing:2.5px;
+  color:var(--dim);text-transform:uppercase;
+}
+.modePill{
+  font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;
+  padding:6px 12px;border-radius:999px;
+  background:var(--learn-bg);border:1px solid rgba(167,139,250,.35);color:var(--learn);
+  transition:.35s;
+}
+.modePill.groove{background:var(--groove-bg);border-color:rgba(45,212,191,.35);color:var(--groove)}
+.modePill.test{background:var(--test-bg);border-color:rgba(251,113,133,.35);color:var(--test)}
+
+/* ---------- PROGRESS ---------- */
+.progress{
+  flex-shrink:0;
+  margin-bottom:14px;
+}
+.progress-track{
+  height:3px;border-radius:2px;background:var(--line);overflow:hidden;
+}
+.progress-fill{
+  height:100%;width:0%;
+  background:var(--learn);
+  border-radius:2px;
+  transition:width .3s cubic-bezier(.4,0,.2,1), background .35s;
+}
+.progress-meta{
+  display:flex;justify-content:space-between;
+  margin-top:8px;
+  font-size:11px;font-weight:700;letter-spacing:1px;
+  color:var(--dim);
+  text-transform:uppercase;
+}
+.progress-meta b{color:var(--txt);font-weight:800}
+
+/* ---------- STAGE ---------- */
+.stage{
+  flex:1;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:20px;
+  position:relative;
+  min-height:0;
+}
+
+/* mode cards (idle) */
+.modeCards{
+  display:flex;flex-direction:column;gap:10px;
+  width:100%;max-width:420px;
+  transition:opacity .25s, transform .25s;
+}
+.modeCards.hidden{opacity:0;transform:scale(.96);pointer-events:none;position:absolute}
+.modeCard{
+  padding:18px 20px;
+  border-radius:18px;
+  border:1px solid var(--line);
+  background:var(--card);
+  display:flex;align-items:center;gap:14px;
+  cursor:pointer;
+  transition:all .2s;
+  text-align:left;
+}
+.modeCard:active{transform:scale(.985)}
+.modeCard.on{
+  border-color:var(--learn);
+  background:linear-gradient(180deg, var(--learn-bg), rgba(167,139,250,.04));
+}
+.modeCard.on.groove{border-color:var(--groove);background:linear-gradient(180deg, var(--groove-bg), rgba(45,212,191,.04))}
+.modeCard.on.test{border-color:var(--test);background:linear-gradient(180deg, var(--test-bg), rgba(251,113,133,.04))}
+.modeCard-icon{
+  width:40px;height:40px;border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--card2);
+  flex-shrink:0;
+  font-size:18px;
+  transition:.2s;
+}
+.modeCard.on .modeCard-icon{background:var(--learn);color:#0a0e14}
+.modeCard.on.groove .modeCard-icon{background:var(--groove);color:#0a0e14}
+.modeCard.on.test .modeCard-icon{background:var(--test);color:#0a0e14}
+.modeCard-body{flex:1;min-width:0}
+.modeCard-title{
+  font-size:15px;font-weight:800;letter-spacing:.3px;
+  color:var(--txt);margin-bottom:3px;
+}
+.modeCard-sub{
+  font-size:12px;color:var(--dim);font-weight:500;
+  letter-spacing:.2px;
+}
+
+/* cue display (active) */
+.cueWrap{
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:14px;
+  opacity:0;transform:scale(.94);
+  pointer-events:none;
+  transition:opacity .25s, transform .25s;
+  position:absolute;inset:0;
+}
+.cueWrap.active{opacity:1;transform:scale(1);pointer-events:auto;position:relative}
+.cue{
+  font-size:clamp(46px,15vw,88px);
+  font-weight:900;
+  letter-spacing:1px;
+  line-height:.95;
+  color:var(--dim2);
+  transition:color .15s ease;
+  text-align:center;
+  will-change:transform,color;
+}
+.cue.release{color:var(--release)}
+.cue.line{color:var(--line-c)}
+.cue.hit{color:var(--hit)}
+.cue.done{color:var(--done)}
+.cue.rest{color:var(--dim2);font-size:clamp(32px,10vw,52px);letter-spacing:8px}
+.cue.pulse{
+  animation:pulseIn .28s cubic-bezier(.34,1.4,.64,1);
+}
+@keyframes pulseIn{
+  0%{transform:scale(.9);opacity:.6}
+  60%{transform:scale(1.04)}
+  100%{transform:scale(1);opacity:1}
+}
+.action{
+  font-size:12px;font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;
+  color:var(--dim);
+  height:16px;
+  opacity:0;
+  transition:opacity .2s;
+}
+.action.show{opacity:1}
+
+/* rating buttons */
+.rating{
+  display:flex;gap:8px;margin-top:6px;
+  opacity:0;transform:translateY(6px);
+  transition:opacity .2s, transform .2s;
+  pointer-events:none;
+}
+.rating.show{opacity:1;transform:translateY(0);pointer-events:auto}
+.rating button{
+  padding:9px 14px;
+  border-radius:11px;
+  border:1px solid var(--line2);
+  background:var(--card2);
+  color:var(--dim);
+  font-size:12px;font-weight:800;
+  letter-spacing:.6px;text-transform:uppercase;
+  cursor:pointer;
+  transition:.15s;
+}
+.rating button:active{transform:scale(.94)}
+.rating button.sel{
+  background:var(--learn-bg);
+  border-color:var(--learn);
+  color:var(--learn);
+}
+
+/* ---------- CONTROLS ---------- */
+.controls{
+  flex-shrink:0;
+  padding-top:14px;
+}
+.primary{
+  width:100%;
+  padding:19px;
+  border:none;border-radius:16px;
+  font-family:inherit;
+  font-size:15px;font-weight:900;letter-spacing:2.5px;
+  text-transform:uppercase;
+  color:#0a0e14;
+  background:var(--learn);
+  cursor:pointer;
+  transition:all .2s;
+  box-shadow:0 6px 24px -8px var(--learn);
+}
+.primary.groove{background:var(--groove);box-shadow:0 6px 24px -8px var(--groove)}
+.primary.test{background:var(--test);box-shadow:0 6px 24px -8px var(--test)}
+.primary:active{transform:scale(.985)}
+.primary.stop{
+  background:transparent;
+  color:var(--dim);
+  border:1px solid var(--line2);
+  box-shadow:none;
+}
+
+/* manual buttons */
+.manual{
+  display:none;
+  grid-template-columns:1fr 1fr;gap:8px;
+  margin-top:10px;
+}
+.manual.show{display:grid}
+.mbtn{
+  padding:18px 10px;
+  border-radius:14px;
+  border:1px solid var(--line);
+  background:var(--card);
+  color:var(--txt);
+  font-family:inherit;
+  font-size:14px;font-weight:800;letter-spacing:1px;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:.15s;
+}
+.mbtn:disabled{opacity:.25}
+.mbtn:active:not(:disabled){transform:scale(.97);background:var(--card2)}
+
+/* ---------- BOTTOM SHEET ---------- */
+.sheet-backdrop{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.6);
+  opacity:0;pointer-events:none;
+  transition:opacity .25s;
+  z-index:40;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+.sheet-backdrop.show{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;
+  left:0;right:0;bottom:0;
+  max-height:88dvh;
+  background:var(--bg2);
+  border-top-left-radius:24px;
+  border-top-right-radius:24px;
+  border-top:1px solid var(--line);
+  transform:translateY(100%);
+  transition:transform .32s cubic-bezier(.32,.72,0,1);
+  z-index:50;
+  display:flex;flex-direction:column;
+  padding-bottom:var(--safe-b);
+}
+.sheet.show{transform:translateY(0)}
+.sheet-handle{
+  width:36px;height:4px;border-radius:2px;
+  background:var(--line2);
+  margin:12px auto 4px;
+  flex-shrink:0;
+}
+.sheet-header{
+  padding:8px 20px 4px;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
+}
+.sheet-title{
+  font-size:17px;font-weight:800;letter-spacing:.3px;
+}
+.sheet-close{
+  width:34px;height:34px;border-radius:50%;
+  background:var(--card2);
+  border:none;color:var(--dim);
+  font-size:18px;font-weight:400;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+}
+.sheet-close:active{transform:scale(.92)}
+.sheet-body{
+  padding:8px 20px 24px;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* ---------- SETTINGS ITEMS ---------- */
+.group{
+  margin-top:20px;
+}
+.group:first-child{margin-top:8px}
+.group-label{
+  font-size:11px;font-weight:800;letter-spacing:1.6px;
+  color:var(--dim2);text-transform:uppercase;
+  margin-bottom:10px;padding-left:2px;
+}
+.item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  margin-bottom:8px;
+  gap:14px;
+}
+.item.stack{flex-direction:column;align-items:stretch;gap:10px}
+.item-label{
+  font-size:14px;font-weight:700;color:var(--txt);
+}
+.item-sub{
+  font-size:12px;color:var(--dim);margin-top:3px;font-weight:500;
+  line-height:1.4;
+}
+.item-value{
+  font-size:14px;font-weight:800;color:var(--txt);
+  font-variant-numeric:tabular-nums;
+}
+.item-head{
+  display:flex;align-items:center;justify-content:space-between;width:100%;
+}
+
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;height:24px;
+  background:transparent;margin:0;
+  display:block;
+}
+input[type=range]::-webkit-slider-runnable-track{
+  height:4px;border-radius:2px;background:var(--line2);
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--txt);border:none;
+  margin-top:-9px;
+  box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--line2)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--txt);border:none}
+
+/* line chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px;width:100%}
+.chip{
+  padding:10px 15px;
+  border-radius:999px;
+  border:1px solid var(--line2);
+  background:transparent;
+  color:var(--dim);
+  font-family:inherit;
+  font-size:13px;font-weight:800;letter-spacing:.5px;
+  cursor:pointer;
+  transition:.15s;
+  text-transform:uppercase;
+}
+.chip.on{
+  background:var(--txt);
+  border-color:var(--txt);
+  color:var(--bg);
+}
+
+/* switch */
+.sw{
+  display:flex;align-items:center;gap:14px;
+  padding:14px 16px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  margin-bottom:8px;
+  cursor:pointer;
+  width:100%;
+}
+.sw-label{flex:1;font-size:14px;font-weight:700}
+.sw-label small{display:block;font-size:11.5px;color:var(--dim);font-weight:500;margin-top:2px;letter-spacing:.1px}
+.sw input{display:none}
+.sw-track{
+  width:42px;height:26px;border-radius:13px;
+  background:var(--line2);
+  position:relative;
+  transition:.2s;
+  flex-shrink:0;
+}
+.sw-track::after{
+  content:'';position:absolute;
+  width:20px;height:20px;border-radius:50%;
+  background:var(--txt);
+  top:3px;left:3px;
+  transition:.2s cubic-bezier(.34,1.4,.64,1);
+}
+.sw input:checked + .sw-track{
+  background:var(--learn);
+}
+.sw input:checked + .sw-track::after{
+  left:19px;
+}
+
+/* voice status */
+.status-card{
+  padding:14px 16px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  margin-top:8px;
+}
+.status-line{
+  display:flex;align-items:center;gap:8px;
+  font-size:12px;color:var(--dim);
+  line-height:1.6;
+}
+.status-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--line2);
+  flex-shrink:0;
+}
+.status-dot.ok{background:var(--done);box-shadow:0 0 8px var(--done)}
+.status-dot.warn{background:var(--release);box-shadow:0 0 8px var(--release)}
+.status-dot.err{background:var(--hit);box-shadow:0 0 8px var(--hit)}
+.status-note{
+  font-size:11.5px;color:var(--dim2);margin-top:8px;line-height:1.55;
+}
+
+.test-btn{
+  width:100%;margin-top:14px;
+  padding:14px;
+  border-radius:13px;
+  border:1px solid var(--line2);
+  background:transparent;
+  color:var(--txt);
+  font-family:inherit;
+  font-size:13px;font-weight:800;letter-spacing:1.4px;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:.15s;
+}
+.test-btn:active{transform:scale(.985);background:var(--card)}
+
+/* toast */
+.toast{
+  position:fixed;
+  left:50%;bottom:calc(var(--safe-b) + 90px);
+  transform:translate(-50%, 20px);
+  padding:11px 20px;
+  background:var(--card2);
+  border:1px solid var(--line2);
+  border-radius:100px;
+  font-size:13px;font-weight:700;
+  color:var(--txt);
+  opacity:0;pointer-events:none;
+  transition:.25s;
+  z-index:60;
+  white-space:nowrap;
+  max-width:calc(100vw - 40px);
+  overflow:hidden;text-overflow:ellipsis;
+}
+.toast.show{opacity:1;transform:translate(-50%, 0)}
+
+/* summary overlay */
+.summary{
+  position:fixed;inset:0;
+  background:rgba(10,14,20,.94);
+  -webkit-backdrop-filter:blur(20px);
+  backdrop-filter:blur(20px);
+  z-index:45;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:30px;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s;
+}
+.summary.show{opacity:1;pointer-events:auto}
+.summary-inner{width:100%;max-width:340px;text-align:center}
+.summary-title{
+  font-size:11px;font-weight:800;letter-spacing:3px;
+  color:var(--dim);text-transform:uppercase;
+  margin-bottom:6px;
+}
+.summary-mode{
+  font-size:24px;font-weight:900;letter-spacing:.5px;
+  margin-bottom:28px;
+}
+.summary-stats{
+  display:grid;grid-template-columns:1fr 1fr 1fr;
+  gap:10px;margin-bottom:28px;
+}
+.stat{
+  padding:16px 8px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+}
+.stat-num{
+  font-size:26px;font-weight:900;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:-.5px;
+  line-height:1;
+  margin-bottom:5px;
+}
+.stat-label{
+  font-size:10px;font-weight:700;letter-spacing:1.2px;
+  color:var(--dim);text-transform:uppercase;
+}
+.stat-num.good{color:var(--done)}
+.stat-num.mid{color:var(--release)}
+.stat-num.bad{color:var(--hit)}
+.summary-actions{display:flex;flex-direction:column;gap:10px}
+.summary-btn{
+  padding:16px;border-radius:14px;border:none;
+  font-family:inherit;
+  font-size:14px;font-weight:800;letter-spacing:1.6px;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:.15s;
+}
+.summary-btn.primary{background:var(--learn);color:#0a0e14}
+.summary-btn.ghost{background:transparent;color:var(--dim);border:1px solid var(--line2)}
+.summary-btn:active{transform:scale(.98)}
+
+/* settings gear */
+.gear{
+  width:38px;height:38px;
+  border-radius:50%;
+  background:transparent;
+  border:1px solid var(--line);
+  color:var(--dim);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  padding:0;
+  transition:.15s;
+}
+.gear:active{transform:scale(.92);background:var(--card)}
+.gear svg{width:17px;height:17px}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- top bar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-dot" id="brandDot"></div>
+      <div class="brand-name">Shadow Batting</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="modePill" id="modePill">Learning</div>
+      <button class="gear" id="gearBtn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- progress -->
+  <div class="progress">
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="progress-meta">
+      <span>Rep <b id="progressRep">0</b> / <b id="progressTotal">20</b></span>
+      <span id="progressState">Ready</span>
+    </div>
+  </div>
+
+  <!-- stage -->
+  <div class="stage">
+
+    <!-- mode cards (visible when idle) -->
+    <div class="modeCards" id="modeCards">
+      <button class="modeCard on" data-mode="learning">
+        <div class="modeCard-icon">◐</div>
+        <div class="modeCard-body">
+          <div class="modeCard-title">Learning</div>
+          <div class="modeCard-sub">Slow cadence · captions on · 20 reps</div>
+        </div>
+      </button>
+      <button class="modeCard" data-mode="groove">
+        <div class="modeCard-icon">◈</div>
+        <div class="modeCard-body">
+          <div class="modeCard-title">Groove</div>
+          <div class="modeCard-sub">Flow cadence · captions off · 40 reps</div>
+        </div>
+      </button>
+      <button class="modeCard" data-mode="test">
+        <div class="modeCard-icon">◉</div>
+        <div class="modeCard-body">
+          <div class="modeCard-title">Test</div>
+          <div class="modeCard-sub">Real windows · jitter on · 6 reps</div>
+        </div>
+      </button>
+    </div>
+
+    <!-- cue (visible when active) -->
+    <div class="cueWrap" id="cueWrap">
+      <div class="cue" id="cue">READY</div>
+      <div class="action" id="action">get set</div>
+      <div class="rating" id="rating">
+        <button data-r="early">Early</button>
+        <button data-r="ontime">On time</button>
+        <button data-r="late">Late</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- controls -->
+  <div class="controls">
+    <button class="primary" id="startBtn">Start Set</button>
+
+    <div class="manual" id="manual">
+      <button class="mbtn" data-line="Leg">Leg</button>
+      <button class="mbtn" data-line="Off">Off</button>
+      <button class="mbtn" data-line="Middle">Middle</button>
+      <button class="mbtn" data-line="Back">Back</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- settings sheet -->
+<div class="sheet-backdrop" id="backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title">Settings</div>
+    <button class="sheet-close" id="sheetClose">×</button>
+  </div>
+  <div class="sheet-body">
+
+    <div class="group">
+      <div class="group-label">Training</div>
+
+      <div class="item stack">
+        <div class="item-head">
+          <div class="item-label">Cadence</div>
+          <div class="item-value" id="cadVal">1.00×</div>
+        </div>
+        <input type="range" id="cad" min="60" max="160" value="100" step="5">
+        <div class="item-sub">Scales the trigger and read windows together. Nudge only when a setting feels automatic.</div>
+      </div>
+
+      <div class="item stack">
+        <div class="item-head">
+          <div class="item-label">Reps per set</div>
+          <div class="item-value" id="repsVal">20</div>
+        </div>
+        <input type="range" id="reps" min="5" max="80" value="20" step="1">
+      </div>
+
+      <div class="item stack">
+        <div class="item-head">
+          <div class="item-label">Rest between reps</div>
+          <div class="item-value" id="gapVal">6s</div>
+        </div>
+        <input type="range" id="gap" min="2" max="15" value="6" step="1">
+        <div class="item-sub">Silent beat for body check-in. Don't cut this short.</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Line calls</div>
+      <div class="item stack">
+        <div class="chips" id="chips">
+          <button class="chip on" data-line="Leg">Leg</button>
+          <button class="chip on" data-line="Off">Off</button>
+          <button class="chip on" data-line="Middle">Middle</button>
+          <button class="chip on" data-line="Back">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Voice</div>
+
+      <div class="item stack">
+        <div class="item-head">
+          <div class="item-label">Voice speed</div>
+          <div class="item-value" id="vsVal">1.8×</div>
+        </div>
+        <input type="range" id="vs" min="10" max="30" value="18">
+      </div>
+
+      <div class="item stack">
+        <div class="item-head">
+          <div class="item-label">Voice volume</div>
+          <div class="item-value" id="volVal">90%</div>
+        </div>
+        <input type="range" id="vol" min="0" max="100" value="90">
+      </div>
+
+      <button class="test-btn" id="testBtn">Test voice</button>
+
+      <div class="status-card" id="statusCard">
+        <div class="status-line"><div class="status-dot" id="dotSpeech"></div><div>Web Speech API</div></div>
+        <div class="status-line" style="margin-top:6px"><div class="status-dot ok" id="dotGoogle"></div><div>Google TTS (streamed)</div></div>
+        <div class="status-line" style="margin-top:6px"><div class="status-dot ok" id="dotSE"></div><div>StreamElements (fallback)</div></div>
+        <div class="status-line" style="margin-top:6px"><div class="status-dot" id="dotVib"></div><div>Vibration</div></div>
+        <div class="status-note" id="statusNote">Checking…</div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Behavior</div>
+
+      <label class="sw">
+        <div class="sw-label">Action captions<small>Show what your body should do under each cue</small></div>
+        <input type="checkbox" id="captions" checked>
+        <div class="sw-track"></div>
+      </label>
+
+      <label class="sw">
+        <div class="sw-label">Random pace variation<small>Slight timing shifts per rep — off for technique work</small></div>
+        <input type="checkbox" id="jitter">
+        <div class="sw-track"></div>
+      </label>
+
+      <label class="sw">
+        <div class="sw-label">Voice cues<small>Speak Release, line, and Hit</small></div>
+        <input type="checkbox" id="voice" checked>
+        <div class="sw-track"></div>
+      </label>
+
+      <label class="sw">
+        <div class="sw-label">Vibration<small>Tap patterns under each cue</small></div>
+        <input type="checkbox" id="vibrate" checked>
+        <div class="sw-track"></div>
+      </label>
+
+      <label class="sw">
+        <div class="sw-label">Rate every rep<small>Show Early / On time / Late buttons after each swing</small></div>
+        <input type="checkbox" id="ratingOn" checked>
+        <div class="sw-track"></div>
+      </label>
+
+      <label class="sw">
+        <div class="sw-label">Manual line selection<small>Tap the line yourself before each ball</small></div>
+        <input type="checkbox" id="manualMode">
+        <div class="sw-track"></div>
+      </label>
+    </div>
+
+  </div>
+</div>
+
+<!-- summary overlay -->
+<div class="summary" id="summary">
+  <div class="summary-inner">
+    <div class="summary-title">Set complete</div>
+    <div class="summary-mode" id="sumMode">Learning · 20 reps</div>
+    <div class="summary-stats">
+      <div class="stat">
+        <div class="stat-num good" id="sumEarly">0</div>
+        <div class="stat-label">Early</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num" id="sumOn">0</div>
+        <div class="stat-label">On time</div>
+      </div>
+      <div class="stat">
+        <div class="stat-num bad" id="sumLate">0</div>
+        <div class="stat-label">Late</div>
+      </div>
+    </div>
+    <div class="summary-actions">
+      <button class="summary-btn primary" id="sumAgain">Run again</button>
+      <button class="summary-btn ghost" id="sumClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   SHADOW BATTING — v7
+   Polish pass · PWA-ready · rating capture · adaptive nudge
+   ============================================================ */
+
+/* ---------- mode presets ---------- */
+const MODES = {
+  learning: { label:'Learning', r2l:800, l2h:1500, gap:6, reps:20, jitter:false, captions:true,  key:'learn' },
+  groove:   { label:'Groove',   r2l:650, l2h:1100, gap:4, reps:40, jitter:false, captions:false, key:'groove' },
+  test:     { label:'Test',     r2l:350, l2h:400,  gap:5, reps:6,  jitter:true,  captions:true,  key:'test' }
+};
+
+/* ---------- state ---------- */
+const S = {
+  mode: 'learning',
+  cadence: 100,
+  reps: 20,
+  gap: 6,
+  volume: 0.9,
+  voiceRate: 1.8,
+  captions: true,
+  jitter: false,
+  voice: true,
+  vibrate: true,
+  ratingOn: true,
+  manualMode: false,
+  lines: new Set(['Leg','Off','Middle','Back'])
+};
+
+let running = false;
+let repCount = 0;
+let manualArmed = false;
+let ratingPending = false;
+let ratingStartTs = 0;
+let currentRatings = { early:0, ontime:0, late:0 };
+let ratingHistory = [];
+let recentRatings = [];
+let baseCadenceForMode = 100;
+let timers = [];
+let wakeLock = null;
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const cueEl = $('#cue'), actionEl = $('#action'), ratingEl = $('#rating');
+const cueWrap = $('#cueWrap'), modeCards = $('#modeCards');
+
+function later(fn, ms){ const id = setTimeout(fn, ms); timers.push(id); return id; }
+function clearAll(){ timers.forEach(clearTimeout); timers = []; }
+
+function toast(msg, ms){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), ms || 1800);
+}
+
+function setCue(text, action, cls){
+  cueEl.textContent = text;
+  cueEl.className = 'cue' + (cls ? ' ' + cls : '');
+  // replay pulse animation
+  cueEl.classList.remove('pulse');
+  void cueEl.offsetWidth;
+  if (cls !== 'rest') cueEl.classList.add('pulse');
+
+  if (action && S.captions){
+    actionEl.textContent = action;
+    actionEl.classList.add('show');
+  } else {
+    actionEl.classList.remove('show');
+  }
+}
+
+function updateProgress(){
+  const pct = S.reps ? Math.min(100, (repCount / S.reps) * 100) : 0;
+  $('#progressFill').style.width = pct + '%';
+  $('#progressRep').textContent = repCount;
+  $('#progressTotal').textContent = S.reps;
+}
+
+function setProgressState(text){
+  $('#progressState').textContent = text;
+}
+
+/* ============================================================
+   VOICE ENGINE (unchanged core — WebView-safe)
+   ============================================================ */
+let audioCtx = null;
+let activeAudio = null;
+let activeUtterance = null;
+let unlocked = false;
+
+const IS_WEBVIEW = /; wv\)/.test(navigator.userAgent) ||
+                   (/Android/.test(navigator.userAgent) && /Version\/\d+\.\d+ Chrome/.test(navigator.userAgent));
+
+const PHRASES = ['Ready','Release','Leg','Off','Middle','Back','Hit','Set complete','Test'];
+const clipCache = {};
+
+function googleTTSUrl(text){
+  return 'https://translate.google.com/translate_tts'
+    + '?ie=UTF-8&q=' + encodeURIComponent(text) + '&tl=en&client=tw-ob';
+}
+function streamElementsUrl(text){
+  return 'https://api.streamelements.com/kappa/v2/speech'
+    + '?voice=Brian&text=' + encodeURIComponent(text);
+}
+function buildClip(text, urlBuilder){
+  const a = new Audio();
+  a.preload = 'auto'; a.crossOrigin = 'anonymous';
+  a.src = urlBuilder(text); a.load();
+  return a;
+}
+function preloadAll(){
+  PHRASES.forEach(text => {
+    if (clipCache[text]) return;
+    const a = buildClip(text, googleTTSUrl);
+    a.addEventListener('error', () => {
+      try { a.src = streamElementsUrl(text); a.load(); } catch(e){}
+    }, { once: true });
+    clipCache[text] = a;
+  });
+}
+function stopVoice(){
+  if (activeAudio){ try { activeAudio.pause(); activeAudio.currentTime = 0; } catch(e){} }
+  if (activeUtterance){ try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch(e){} }
+}
+function speakWebSpeech(text, rate){
+  return new Promise(resolve => {
+    if (!('speechSynthesis' in window)) return resolve(false);
+    let voices = [];
+    try { voices = window.speechSynthesis.getVoices() || []; } catch(e){}
+    if (!voices.length) return resolve(false);
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = rate; u.pitch = 1; u.volume = 1; u.lang = 'en-US';
+      const v = voices.find(x => /en[-_]US/i.test(x.lang)) ||
+                voices.find(x => /^en/i.test(x.lang)) || voices[0];
+      if (v) u.voice = v;
+      let started = false, resolved = false;
+      const finish = val => { if (!resolved){ resolved = true; resolve(val); } };
+      u.onstart = () => { started = true; };
+      u.onend = () => finish(true);
+      u.onerror = () => finish(false);
+      activeUtterance = u;
+      synth.speak(u);
+      setTimeout(() => { if (!started) finish(false); }, 200);
+      setTimeout(() => finish(true), 4000);
+    } catch(e){ resolve(false); }
+  });
+}
+function playClip(text){
+  return new Promise(resolve => {
+    let a = clipCache[text];
+    if (!a){ a = buildClip(text, googleTTSUrl); clipCache[text] = a; }
+    try {
+      a.playbackRate = S.voiceRate;
+      a.preservesPitch = true; a.mozPreservesPitch = true; a.webkitPreservesPitch = true;
+      a.volume = S.volume; a.currentTime = 0;
+      activeAudio = a;
+      const onEnd = () => { a.removeEventListener('ended', onEnd); resolve(true); };
+      a.addEventListener('ended', onEnd, { once: true });
+      const p = a.play();
+      if (p && p.catch){
+        p.catch(() => {
+          setTimeout(() => {
+            a.play().then(() => {
+              a.addEventListener('ended', () => resolve(true), { once: true });
+            }).catch(() => resolve(false));
+          }, 60);
+        });
+      }
+      setTimeout(() => resolve(true), 3500);
+    } catch(e){ resolve(false); }
+  });
+}
+async function speak(text){
+  if (!S.voice || !text) return;
+  stopVoice();
+  if (!IS_WEBVIEW){
+    const ok = await speakWebSpeech(text, S.voiceRate);
+    if (ok) return;
+  }
+  await playClip(text);
+}
+function buzz(p){
+  if (!S.vibrate) return;
+  try{ if (navigator.vibrate) navigator.vibrate(p); }catch(e){}
+}
+async function requestWakeLock(){
+  try{ if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+}
+function releaseWakeLock(){
+  try{ wakeLock && wakeLock.release(); }catch(e){}
+  wakeLock = null;
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running) requestWakeLock();
+});
+function unlockAll(){
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC && !audioCtx){ audioCtx = new AC(); }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  } catch(e){}
+  if (!unlocked){
+    unlocked = true;
+    try {
+      const a = new Audio();
+      a.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+      a.volume = 0; a.play().catch(()=>{});
+    } catch(e){}
+    try {
+      if ('speechSynthesis' in window){
+        const u = new SpeechSynthesisUtterance(' ');
+        u.volume = 0; window.speechSynthesis.speak(u);
+      }
+    } catch(e){}
+  }
+}
+['pointerdown','touchstart','click'].forEach(ev => {
+  document.addEventListener(ev, unlockAll, { passive: true });
+});
+
+function updateStatus(){
+  let voices = 0;
+  try{ if ('speechSynthesis' in window) voices = window.speechSynthesis.getVoices().length; }catch(e){}
+  const speechOK = voices > 0 && !IS_WEBVIEW;
+  const vibOK = !!navigator.vibrate;
+
+  $('#dotSpeech').className = 'status-dot ' + (speechOK ? 'ok' : 'warn');
+  $('#dotVib').className = 'status-dot ' + (vibOK ? 'ok' : '');
+
+  let note;
+  if (IS_WEBVIEW){
+    note = 'WebView detected. Voice is streamed via Google TTS, then StreamElements if needed. Requires internet.';
+  } else if (speechOK){
+    note = 'All engines ready. Web Speech API is primary.';
+  } else {
+    note = 'No local TTS voices detected. Voice will stream from Google TTS.';
+  }
+  $('#statusNote').textContent = note;
+}
+
+/* ============================================================
+   TIMING
+   ============================================================ */
+function getTiming(){
+  const m = MODES[S.mode];
+  const mult = S.cadence / 100;
+  let r2l = Math.round(m.r2l * mult);
+  let l2h = Math.round(m.l2h * mult);
+  if (S.jitter){
+    const j = 0.88 + Math.random() * 0.24;
+    r2l = Math.round(r2l * j);
+    l2h = Math.round(l2h * j);
+  }
+  return { r2l, l2h };
+}
+
+/* ============================================================
+   MANUAL BUTTONS
+   ============================================================ */
+function renderManual(armed){
+  const m = $('#manual');
+  m.classList.toggle('show', S.manualMode && running);
+  m.querySelectorAll('.mbtn').forEach(b => b.disabled = !armed);
+}
+$('#manual').addEventListener('click', e => {
+  const btn = e.target.closest('.mbtn');
+  if (!btn || !manualArmed || !running) return;
+  manualArmed = false;
+  renderManual(false);
+  repCount++;
+  updateProgress();
+  runRep(btn.dataset.line);
+});
+
+/* ============================================================
+   RATING
+   ============================================================ */
+function showRating(){
+  if (!S.ratingOn) return;
+  ratingPending = true;
+  ratingStartTs = Date.now();
+  ratingEl.classList.add('show');
+  ratingEl.querySelectorAll('button').forEach(b => b.classList.remove('sel'));
+}
+function hideRating(){
+  ratingPending = false;
+  ratingEl.classList.remove('show');
+}
+function recordRating(r){
+  if (!ratingPending) return;
+  ratingPending = false;
+  currentRatings[r]++;
+  recentRatings.push(r);
+  if (recentRatings.length > 4) recentRatings.shift();
+  ratingEl.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('sel', b.dataset.r === r);
+  });
+  setTimeout(hideRating, 220);
+
+  // adaptive nudge — one step, capped, only in learning/groove
+  if (S.mode !== 'test' && recentRatings.length >= 3){
+    const last3 = recentRatings.slice(-3);
+    const allLate = last3.every(x => x === 'late');
+    const allGood = last3.every(x => x === 'ontime' || x === 'early');
+    const baseMin = 75, baseMax = 140;
+    if (allLate && S.cadence > baseMin){
+      S.cadence = Math.max(baseMin, S.cadence - 5);
+      $('#cad').value = S.cadence;
+      $('#cadVal').textContent = (S.cadence / 100).toFixed(2) + '×';
+      toast('Cadence loosened · 3 late reps');
+      recentRatings = [];
+    } else if (allGood && S.cadence < baseMax){
+      S.cadence = Math.min(baseMax, S.cadence + 3);
+      $('#cad').value = S.cadence;
+      $('#cadVal').textContent = (S.cadence / 100).toFixed(2) + '×';
+      toast('Cadence tightened · 3 clean reps');
+      recentRatings = [];
+    }
+  }
+}
+ratingEl.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  recordRating(b.dataset.r);
+});
+
+/* ============================================================
+   CORE FLOW
+   ============================================================ */
+function startSet(){
+  if (running) return;
+  unlockAll();
+  preloadAll();
+  running = true;
+  repCount = 0;
+  manualArmed = false;
+  currentRatings = { early:0, ontime:0, late:0 };
+  recentRatings = [];
+  ratingHistory = [];
+  updateProgress();
+  renderManual(false);
+  hideRating();
+
+  // UI swap
+  modeCards.classList.add('hidden');
+  cueWrap.classList.add('active');
+
+  // button state
+  const btn = $('#startBtn');
+  btn.textContent = 'Stop';
+  btn.classList.add('stop');
+
+  setProgressState('Active');
+  setCue('READY', 'get set', 'done');
+  speak('Ready');
+  buzz(40);
+  requestWakeLock();
+
+  later(nextRep, 1500);
+}
+
+function nextRep(){
+  if (!running) return;
+  if (repCount >= S.reps){ endSet(); return; }
+
+  if (!S.manualMode){
+    repCount++;
+    updateProgress();
+    runRep(pickLine());
+  } else {
+    manualArmed = true;
+    renderManual(true);
+    setCue('YOUR CALL', 'tap a line', 'done');
+  }
+}
+
+function pickLine(){
+  const arr = [...S.lines];
+  if (!arr.length) return 'Middle';
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function runRep(line){
+  const { r2l, l2h } = getTiming();
+
+  // stage 1 — trigger
+  setCue('RELEASE', 'flinch + cock bat', 'release');
+  speak('Release');
+  buzz(25);
+
+  // stage 2 — read + footwork
+  later(() => {
+    setCue(line.toUpperCase(), 'see ball, move foot', 'line');
+    speak(line);
+    buzz([15, 40, 15]);
+  }, r2l);
+
+  // stage 3 — execute
+  later(() => {
+    setCue('HIT', 'swing', 'hit');
+    speak('Hit');
+    buzz(140);
+    showRating();
+  }, r2l + l2h);
+
+  // rest
+  later(() => {
+    if (!running) return;
+    hideRating();
+    if (repCount >= S.reps){ endSet(); return; }
+    setCue('· · ·', '', 'rest');
+    setProgressState('Rest');
+    later(() => {
+      setProgressState('Active');
+      nextRep();
+    }, S.gap * 1000);
+  }, r2l + l2h + 400);
+}
+
+function endSet(){
+  running = false;
+  manualArmed = false;
+  renderManual(false);
+  hideRating();
+  releaseWakeLock();
+
+  const btn = $('#startBtn');
+  btn.textContent = 'Start Set';
+  btn.classList.remove('stop');
+
+  modeCards.classList.remove('hidden');
+  cueWrap.classList.remove('active');
+
+  setProgressState('Complete');
+  setCue('SET DONE', repCount + ' reps', 'done');
+  speak('Set complete');
+  buzz([80, 60, 80, 60, 220]);
+
+  // show summary
+  setTimeout(showSummary, 700);
+}
+
+function stopAll(){
+  running = false;
+  manualArmed = false;
+  clearAll();
+  stopVoice();
+  releaseWakeLock();
+  hideRating();
+  repCount = 0;
+  updateProgress();
+  renderManual(false);
+
+  const btn = $('#startBtn');
+  btn.textContent = 'Start Set';
+  btn.classList.remove('stop');
+
+  modeCards.classList.remove('hidden');
+  cueWrap.classList.remove('active');
+
+  setProgressState('Ready');
+  setCue('READY', 'tap start', 'done');
+}
+
+/* ============================================================
+   SUMMARY
+   ============================================================ */
+function showSummary(){
+  $('#sumMode').textContent = MODES[S.mode].label + ' · ' + repCount + ' reps';
+  $('#sumEarly').textContent = currentRatings.early;
+  $('#sumOn').textContent = currentRatings.ontime;
+  $('#sumLate').textContent = currentRatings.late;
+
+  // color the on-time number by majority
+  const on = $('#sumOn');
+  on.className = 'stat-num';
+  if (currentRatings.ontime > currentRatings.late && currentRatings.ontime > currentRatings.early){
+    on.classList.add('good');
+  } else if (currentRatings.late > currentRatings.ontime){
+    on.classList.add('bad');
+  } else {
+    on.classList.add('mid');
+  }
+
+  $('#summary').classList.add('show');
+}
+function hideSummary(){
+  $('#summary').classList.remove('show');
+}
+$('#sumAgain').addEventListener('click', () => { hideSummary(); startSet(); });
+$('#sumClose').addEventListener('click', () => { hideSummary(); });
+
+/* ============================================================
+   MODE
+   ============================================================ */
+function applyMode(name, preserveCadence){
+  const m = MODES[name];
+  S.mode = name;
+  S.reps = m.reps;
+  S.gap = m.gap;
+  S.captions = m.captions;
+  S.jitter = m.jitter;
+  if (!preserveCadence) S.cadence = 100;
+
+  // UI updates
+  $('#reps').value = S.reps; $('#repsVal').textContent = S.reps;
+  $('#gap').value = S.gap; $('#gapVal').textContent = S.gap + 's';
+  $('#captions').checked = S.captions;
+  $('#jitter').checked = S.jitter;
+  $('#cad').value = S.cadence;
+  $('#cadVal').textContent = (S.cadence / 100).toFixed(2) + '×';
+
+  // mode cards
+  document.querySelectorAll('.modeCard').forEach(c => {
+    c.classList.remove('on','groove','test');
+    if (c.dataset.mode === name){
+      c.classList.add('on');
+      if (name !== 'learning') c.classList.add(name);
+    }
+  });
+
+  // pill
+  const pill = $('#modePill');
+  pill.textContent = m.label;
+  pill.className = 'modePill' + (name !== 'learning' ? ' ' + name : '');
+
+  // brand dot
+  const dot = $('#brandDot');
+  dot.style.background = name === 'learning' ? 'var(--learn)'
+                        : name === 'groove' ? 'var(--groove)'
+                        : 'var(--test)';
+  dot.style.boxShadow = '0 0 12px ' + dot.style.background;
+
+  // progress + primary button color
+  $('#progressFill').style.background = dot.style.background;
+  const btn = $('#startBtn');
+  btn.classList.remove('groove','test');
+  if (name !== 'learning') btn.classList.add(name);
+
+  updateProgress();
+  setProgressState(running ? 'Active' : 'Ready');
+}
+
+document.querySelectorAll('.modeCard').forEach(c => {
+  c.addEventListener('click', () => {
+    if (running) return;
+    applyMode(c.dataset.mode);
+  });
+});
+
+/* ============================================================
+   SETTINGS SHEET
+   ============================================================ */
+function openSheet(){ $('#backdrop').classList.add('show'); $('#sheet').classList.add('show'); }
+function closeSheet(){ $('#backdrop').classList.remove('show'); $('#sheet').classList.remove('show'); }
+$('#gearBtn').addEventListener('click', openSheet);
+$('#sheetClose').addEventListener('click', closeSheet);
+$('#backdrop').addEventListener('click', closeSheet);
+
+/* ---------- settings wiring ---------- */
+$('#cad').addEventListener('input', e => {
+  S.cadence = +e.target.value;
+  $('#cadVal').textContent = (S.cadence / 100).toFixed(2) + '×';
+});
+$('#reps').addEventListener('input', e => {
+  S.reps = +e.target.value;
+  $('#repsVal').textContent = S.reps;
+  repCount = 0;
+  updateProgress();
+});
+$('#gap').addEventListener('input', e => {
+  S.gap = +e.target.value;
+  $('#gapVal').textContent = S.gap + 's';
+});
+$('#vs').addEventListener('input', e => {
+  S.voiceRate = (+e.target.value) / 10;
+  $('#vsVal').textContent = S.voiceRate.toFixed(1) + '×';
+});
+$('#vol').addEventListener('input', e => {
+  S.volume = (+e.target.value) / 100;
+  $('#volVal').textContent = e.target.value + '%';
+  if (activeAudio) activeAudio.volume = S.volume;
+});
+$('#chips').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const line = b.dataset.line;
+  if (S.lines.has(line)){
+    if (S.lines.size === 1) return;
+    S.lines.delete(line); b.classList.remove('on');
+  } else {
+    S.lines.add(line); b.classList.add('on');
+  }
+});
+$('#captions').addEventListener('change', e => S.captions = e.target.checked);
+$('#jitter').addEventListener('change', e => S.jitter = e.target.checked);
+$('#voice').addEventListener('change', e => S.voice = e.target.checked);
+$('#vibrate').addEventListener('change', e => S.vibrate = e.target.checked);
+$('#ratingOn').addEventListener('change', e => S.ratingOn = e.target.checked);
+$('#manualMode').addEventListener('change', e => {
+  S.manualMode = e.target.checked;
+  if (!running) renderManual(false);
+});
+
+$('#testBtn').addEventListener('click', async () => {
+  unlockAll();
+  preloadAll();
+  await new Promise(r => setTimeout(r, 400));
+  await speak('Test');
+  await new Promise(r => setTimeout(r, 200));
+  await speak('Release');
+  await new Promise(r => setTimeout(r, 500));
+  await speak('Middle');
+  await new Promise(r => setTimeout(r, 500));
+  await speak('Hit');
+  buzz([60,50,60,50,200]);
+});
+
+/* ---------- primary button ---------- */
+$('#startBtn').addEventListener('click', () => {
+  if (running) stopAll(); else startSet();
+});
+
+/* ============================================================
+   SERVICE WORKER (graceful — only runs when hosted over http/https)
+   ============================================================ */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+applyMode('learning');
+$('#volVal').textContent = Math.round(S.volume * 100) + '%';
+$('#vsVal').textContent = S.voiceRate.toFixed(1) + '×';
+$('#gapVal').textContent = S.gap + 's';
+updateProgress();
+
+if ('speechSynthesis' in window){
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = updateStatus;
+}
+setTimeout(updateStatus, 600);
+setTimeout(updateStatus, 2000);
+</script>
+</body>
+</html>
