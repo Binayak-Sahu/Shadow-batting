@@ -22,8 +22,14 @@ After that it works offline. In Chrome: ⋮ menu → **Add to Home screen** for 
 | Head over foot | head sideways vs front knee/ankle at the finish (more room to the off side) | Head falling away / too far over — keep it over your front knee |
 | Knee lift | how high the front knee rises during the step | Smaller step — slide the foot, don't lift the knee |
 | Head bob | up-and-down of the head during the step | Keep your head level as you step |
-| Base | stance width before the rep vs calibration (3D) | Go back to the same stance width |
-| Head forward *(3D)* | at the finish, how far the head is **behind** the front knee | Lean forward — head over your front knee |
+| Base *(experimental — off by default)* | stance width before the rep vs calibration (3D) | Go back to the same stance width |
+| Head forward *(experimental — off by default)* | at the finish, how far the head is **behind** the front knee | Lean forward — head over your front knee |
+
+The two *experimental* checks use 3D depth, which real sessions showed is not reliable for
+distances; they are recorded but don't drive the cue or score unless Settings → Experimental checks is on.
+The result card shows **one cue**; Settings → *Result card: show all numbers* brings back every value.
+
+If you play the shot but your front foot doesn't step, the app says **"No front-foot step seen"**.
 
 **Stand side-on**, as if the phone were the bowler (right-hander: left shoulder to the phone).
 The app checks this from your shoulders: it won't calibrate while you face the phone, and if

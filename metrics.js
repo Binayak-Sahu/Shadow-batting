@@ -345,9 +345,12 @@ export const METRICS = [
   { id: 'headOverFoot', name: 'Head over foot', unit: 'H' },
   { id: 'kneeLift', name: 'Knee lift', unit: 'H' },
   { id: 'headBob', name: 'Head bob', unit: 'H' },
-  { id: 'baseWidth', name: 'Base', unit: '×' },
+  // experimental = measured and recorded, but NOT used for the cue or score
+  // unless Settings → Experimental checks is on. Both rely on 3D depth, which
+  // real sessions showed to be unreliable for distances (stride read 0 or less).
+  { id: 'baseWidth', name: 'Base', unit: 'H', experimental: true },
   // New in v1.1 (3D, needs tuning on real reps) — last, so it is the main cue only when nothing else is off.
-  { id: 'headForward', name: 'Head forward', unit: 'H' },
+  { id: 'headForward', name: 'Head forward', unit: 'H', experimental: true },
 ];
 
 const GRADE_POINTS = { good: 2, warn: 1, bad: 0 };
@@ -534,7 +537,7 @@ export function computeRepMetrics(rep, baseline, cfg) {
     } else m.headForward = null;
   }
 
-  return finishRep(m);
+  return finishRep(m, cfg);
 }
 
 // Cues are spoken and shown big, so: short, plain words, and they say which
@@ -550,16 +553,22 @@ const CUES = {
 };
 
 /** Pick worst fault (red before amber, then priority order) and score. */
-export function finishRep(m) {
+/** The checks that are graded (cue + score) with these settings. */
+export function activeMetrics(cfg) {
+  return METRICS.filter((x) => !x.experimental || (cfg && cfg.experimental));
+}
+
+export function finishRep(m, cfg = null) {
+  const ACTIVE = activeMetrics(cfg);
   let worst = null;
   for (const level of ['bad', 'warn']) {
-    for (const { id } of METRICS) {
+    for (const { id } of ACTIVE) {
       if (m[id] && m[id].grade === level) { worst = id; break; }
     }
     if (worst) break;
   }
   let pts = 0, max = 0;
-  for (const { id } of METRICS) {
+  for (const { id } of ACTIVE) {
     if (m[id] && m[id].grade) { pts += GRADE_POINTS[m[id].grade]; max += 2; }
   }
   const score = max ? Math.round((pts / max) * 100) : 0;

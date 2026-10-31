@@ -339,8 +339,11 @@ test('3D: toe 65° from world landmarks (no camera numbers) → RED', () => {
   return `toe ${t.v.toFixed(1)}° (3D) · cue ${r[0].cue}`;
 });
 
-test('3D: head 0.10 H behind front knee → head forward RED', () => {
-  const r = pipeOne({ toe: 10, lean: -0.10 });
+test('3D: head 0.10 H behind front knee → head forward RED (experimental on); not cued when off', () => {
+  const off = pipeOne({ toe: 10, lean: -0.10 });
+  expect(off[0].cue === 'Good rep!' && off[0].metrics.headForward.g === 'bad', 'experimental off should still measure but not cue: ' + off[0].cue);
+  const c = cloneDefaults(); c.experimental = true;
+  const r = pipeOne({ toe: 10, lean: -0.10 }, c);
   expect(r.length === 1, 'reps=' + r.length);
   const h = r[0].metrics.headForward;
   expect(h && h.g === 'bad' && h.v < -0.07, 'headForward=' + JSON.stringify(h));
@@ -423,6 +426,17 @@ test('Setup: feet too low in the picture → asked to move the phone back', () =
   for (const f of low) { const o = p.push(f.raw, f.world, f.t, W, H_IMG); if (o.msg) m = o.msg.text; }
   expect(/phone back/.test(m) && p.phase === 'setup', 'msg=' + m + ' phase=' + p.phase);
   return m;
+});
+
+test('Shot played without a front-foot step → "No front-foot step seen"', () => {
+  seed = 61;
+  // calibrate side-on, then open the chest to the phone for 1.5 s without stepping
+  const frames = rawFrames([{ type: 'still', dur: 3.2, opts: {} }, { type: 'still', dur: 1.5, opts: { square: true } }, { type: 'still', dur: 1, opts: {} }]);
+  const p = new Pipeline(cfg);
+  const said = [];
+  for (const f of frames) { const o = p.push(f.raw, f.world, f.t, W, H_IMG); if (o.rejected) said.push(o.rejected); if (o.result) said.push('rep'); }
+  expect(said.length === 1 && /No front-foot step/.test(said[0]), said.join(' | ') || 'nothing said');
+  return said[0];
 });
 
 const rows = document.getElementById('rows');

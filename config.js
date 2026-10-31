@@ -2,7 +2,7 @@
 // The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
 // so you normally tune from the app, not by editing this file.
 
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 export const APP_BUILD = '__BUILD__'; // commit id, filled in by the GitHub Pages workflow
 
 // MediaPipe Tasks Vision, pinned to an exact version (not "latest").
@@ -44,7 +44,9 @@ export const DEFAULTS = {
   camera: 'front',          // 'front' (see yourself) or 'back' (sharper; voice is then always on)
   replay: true,
   record: true,             // keep this session's landmarks (no video) for "Download recording"
-  debug: false,             // start with the debug numbers shown (or tap the fps line)
+  debug: false,
+  experimental: false,      // also grade Base + Head forward (3D depth — not reliable yet)
+  cardDetails: false,       // result card: show every check's number (otherwise just the one cue)             // start with the debug numbers shown (or tap the fps line)
   replaySpeed: 0.4,         // 0.4 = 40% speed slow motion
   cardSeconds: 3,           // result card time when replay is off
   toeMethod: '3d',          // '3d' = MediaPipe world landmarks (no camera numbers needed), '2d' = flat picture
@@ -98,6 +100,8 @@ export const SETTINGS_FIELDS = [
   { key: 'replay', label: 'Slow-motion replay', type: 'toggle' },
   { key: 'record', label: 'Keep recording for download (no video)', type: 'toggle' },
   { key: 'debug', label: 'Show debug numbers', type: 'toggle' },
+  { key: 'cardDetails', label: 'Result card: show all numbers', type: 'toggle' },
+  { key: 'experimental', label: 'Experimental checks (Base, Head forward)', type: 'toggle' },
   { key: 'replaySpeed', label: 'Replay speed (0.2–1)', type: 'number', min: 0.2, max: 1, step: 0.05 },
   { key: 'cardSeconds', label: 'Result card seconds (replay off)', type: 'number', min: 1, max: 10, step: 0.5 },
   { group: 'Camera & model' },

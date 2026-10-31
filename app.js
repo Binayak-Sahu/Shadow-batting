@@ -1,7 +1,7 @@
 // app.js — screens, camera, main loop, session, storage.
 import { APP_VERSION, APP_BUILD, SHOTS, SETTINGS_FIELDS, cloneDefaults, mergeSettings, getPath, setPath } from './config.js';
 import { createPoseTracker, LM, frontSide, FEET_MAX, FOOT_OFF_EDGE } from './pose.js';
-import { summarizeSession, METRICS } from './metrics.js';
+import { summarizeSession, METRICS, activeMetrics } from './metrics.js';
 import { ReplayBuffer, ReplayPlayer, makeView, drawSkeleton } from './replay.js';
 import { Pipeline, Recorder, quantizeRaw, quantizeWorld, quantizeTime, compactResult } from './pipeline.js';
 import { getGh, setGh, ghReady, testConnection, queueAdd, flushQueue, recordingPath } from './upload.js';
@@ -698,7 +698,8 @@ function showCard(res) {
   $('cardHead').textContent = res.headline;
   $('cardCue').textContent = res.cue;
   $('cardScore').textContent = `Rep ${S.session.reps.length} · ${res.score}%`;
-  $('cardChips').innerHTML = METRICS.map(({ id, name }) => {
+  $('cardChips').classList.toggle('hidden', !settings.cardDetails);
+  $('cardChips').innerHTML = activeMetrics(settings).map(({ id, name }) => {
     const m = res.metrics[id];
     return `<div class="chip">${gradeIcon(m && m.grade, 26)}<span>${name}<b>${metricText(id, m)}</b></span></div>`;
   }).join('');
@@ -709,7 +710,7 @@ function showLastStrip(res) {
   const el = $('lastResult');
   el.classList.remove('hidden');
   el.innerHTML = `${gradeIcon(res.worst ? res.worstGrade : 'good', 30)}<span>${res.cue}</span>` +
-    METRICS.map(({ id }) => gradeIcon(res.metrics[id] && res.metrics[id].grade, 22)).join('');
+    activeMetrics(settings).map(({ id }) => gradeIcon(res.metrics[id] && res.metrics[id].grade, 22)).join('');
 }
 
 function updateTopbar() {
@@ -736,7 +737,7 @@ function renderSummary(sess) {
   const shot = (SHOTS.find((x) => x.id === sess.shot) || SHOTS[0]).name;
   const date = new Date(sess.date);
   const faults = Object.entries(sum.faults).sort((a, b) => b[1] - a[1]);
-  const metricRows = METRICS.map(({ id, name }) => {
+  const metricRows = activeMetrics(settings).map(({ id, name }) => {
     const p = sum.perMetric[id];
     const g = pctGrade(p);
     return `<div class="mrow">${gradeIcon(g, 26)}<span class="mname">${name}</span>
@@ -820,7 +821,7 @@ function summaryText(sess) {
   return [
     `Shadow Mirror — ${shot} — ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
     `Reps: ${sum.reps} · Avg score: ${sum.avgScore}%`,
-    'Green %: ' + METRICS.map(({ id, name }) => `${name} ${sum.perMetric[id] == null ? '—' : sum.perMetric[id] + '%'}`).join(' · '),
+    'Green %: ' + activeMetrics(settings).map(({ id, name }) => `${name} ${sum.perMetric[id] == null ? '—' : sum.perMetric[id] + '%'}`).join(' · '),
     top ? `Main fault: ${nameOf(top[0])} (${top[1]} reps) — cue: ${topCue}` : 'Main fault: none',
     `Averages: toe ${avg('toe') == null ? '—' : Math.round(avg('toe')) + '°'} · step off-line ${cm(avg('stepWide'))} · knee lift ${cm(avg('kneeLift'))} · head bob ${cm(avg('headBob'))} · head off foot ${cm(avg('headOverFoot'))} · head vs knee ${headFwd()}`,
   ].join('\n');

@@ -14,6 +14,7 @@ const CALIB_SECONDS = 2;
 const MIN_TURN_CALIB = 40;   // calibrate only if at least this side-on
 const TURNED_TURN = 35;      // below this = facing the phone: a rep can't start / isn't graded
 const FACING_MSG_SECONDS = 3; // facing the phone this long between reps → show a hint
+const NO_STEP_SECONDS = 0.8;  // ready, then chest opens to the phone without a front-foot step → say so
 const GESTURE_SECONDS = 2;
 
 /**
@@ -74,6 +75,8 @@ export class Pipeline {
     this.notOkSince = null;
     this.facingSince = null;
     this.facingMsg = false;
+    this.openSince = null;
+    this.noStepSaid = false;
     this.phase = 'setup';
     this.calibFrames = [];
     this.calibStart = null;
@@ -209,7 +212,20 @@ export class Pipeline {
       const turn = shoulderTurn(this.recent.filter((f) => f.t > t - 0.5), vis);
       const facing = turn !== null && turn < TURNED_TURN;
       if (facing && ev && ev.type === 'armed') { d.state = 'settling'; d.stillSince = null; ev = null; }
-      if (facing && frame.ok) {
+      // Played the shot (chest opened to the phone) but the front foot never
+      // stepped: nothing would be counted — tell the batter why.
+      if (d.state === 'armed' && facing && frame.ok) {
+        if (this.openSince === null) this.openSince = t;
+        if (!this.noStepSaid && t - this.openSince >= NO_STEP_SECONDS) {
+          this.noStepSaid = true;
+          out.rejected = 'No front-foot step seen — step towards the phone';
+          out.msg = { text: out.rejected, kind: 'warn' };
+        }
+      } else if (!facing && turn !== null && turn >= 60) {
+        if (this.noStepSaid) out.clearWarn = true;
+        this.openSince = null; this.noStepSaid = false;
+      }
+      if (facing && frame.ok && d.state !== 'armed') {
         if (this.facingSince === null) this.facingSince = t;
         if (t - this.facingSince > FACING_MSG_SECONDS && !this.facingMsg) {
           this.facingMsg = true;
