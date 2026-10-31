@@ -22,7 +22,7 @@ let shotId = 'ffd';
 // ---------------------------------------------------------------- state
 const S = {
   stream: null, tracker: null, trackerModel: null, smoother: null,
-  phase: 'idle', raf: 0, lastVideoTime: -1, lastTs: 0, detectErrors: 0,
+  phase: 'idle', raf: 0, vfc: 0, timeSource: '', lastVideoTime: -1, lastTs: 0, detectErrors: 0,
   recent: [], baseline: null, detector: null, calibFrames: [], calibStart: null,
   session: null, buffer: null, player: null, cardTimer: 0, notOkSince: null,
   fpsCount: 0, fpsT: 0, fps: 0, slowSecs: 0, slowTipShown: false,
@@ -86,6 +86,8 @@ async function startCamera() {
     throw new Error('Camera needs a secure (https://) page. Open the app from your GitHub Pages link.');
   }
   const tries = [
+    // 1280×720: more pixels on the feet (the hardest points to track).
+    { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false },
     { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } }, audio: false },
     { video: { facingMode: 'user' }, audio: false },
     { video: true, audio: false },
@@ -228,8 +230,7 @@ async function startSession() {
   updateTopbar();
   setPhase('setup');
   keepAwake();
-  cancelAnimationFrame(S.raf);
-  S.raf = requestAnimationFrame(loop);
+  startLoop();
   S.starting = false;
 }
 
@@ -261,7 +262,7 @@ function setSideLabels(baseline) {
 }
 
 async function endSession() {
-  cancelAnimationFrame(S.raf);
+  stopLoop();
   S.player && S.player.stop();
   S.buffer && S.buffer.clear();
   clearTimeout(S.cardTimer);
@@ -289,15 +290,44 @@ function saveSession(sess) {
 }
 
 // ---------------------------------------------------------------- main loop
-function loop() {
-  S.raf = requestAnimationFrame(loop);
+// One callback per NEW camera frame (requestVideoFrameCallback), so no frame
+// is processed twice and each gets the camera's own capture time. Older
+// browsers fall back to requestAnimationFrame + the page clock.
+function startLoop() {
+  stopLoop();
+  const video = $('video');
+  if (typeof video.requestVideoFrameCallback === 'function') {
+    const cb = (now, meta) => { S.vfc = video.requestVideoFrameCallback(cb); loop(meta); };
+    S.vfc = video.requestVideoFrameCallback(cb);
+  } else {
+    const cb = () => { S.raf = requestAnimationFrame(cb); loop(null); };
+    S.raf = requestAnimationFrame(cb);
+  }
+}
+function stopLoop() {
+  cancelAnimationFrame(S.raf); S.raf = 0;
+  if (S.vfc) { try { $('video').cancelVideoFrameCallback(S.vfc); } catch (e) { /* ignore */ } S.vfc = 0; }
+}
+
+/** Frame time in ms on the performance.now() clock: camera capture time if the browser gives it. */
+function frameTimeMs(meta) {
+  const now = performance.now();
+  const ct = meta && meta.captureTime;
+  if (typeof ct === 'number' && ct > 0 && Math.abs(now - ct) < 1000) return ct;
+  return now;
+}
+
+function loop(meta) {
   const video = $('video');
   if (!S.tracker || video.readyState < 2 || !video.videoWidth) return;
-  if (video.currentTime === S.lastVideoTime) return;
-  S.lastVideoTime = video.currentTime;
+  if (!meta) {
+    if (video.currentTime === S.lastVideoTime) return;
+    S.lastVideoTime = video.currentTime;
+  }
 
-  const ts = Math.max(performance.now(), S.lastTs + 1); // must strictly increase
+  const ts = Math.max(frameTimeMs(meta), S.lastTs + 1); // must strictly increase
   S.lastTs = ts;
+  S.timeSource = meta && meta.captureTime ? 'cam' : 'page';
   let res;
   try {
     res = S.tracker.detect(video, ts);
@@ -305,7 +335,7 @@ function loop() {
   } catch (e) {
     console.warn('detect failed', e);
     if (++S.detectErrors > 10) {
-      cancelAnimationFrame(S.raf);
+      stopLoop();
       loadingError('Pose tracking stopped working on this phone. Try Settings → Model: Lite, then start again.');
     }
     return;
@@ -336,7 +366,8 @@ function countFps(ts) {
     S.fps = Math.round((S.fpsCount * 1000) / (ts - S.fpsT));
     S.fpsCount = 0; S.fpsT = ts;
     const model = activeModel();
-    $('fps').textContent = `${S.fps} fps · ${model} · ${S.tracker ? S.tracker.delegate : ''}`;
+    const v = $('video');
+    $('fps').textContent = `${S.fps} fps · ${model} · ${S.tracker ? S.tracker.delegate : ''} · ${v.videoWidth}×${v.videoHeight}`;
     if (ts < S.fpsFrom) return;
     S.slowSecs = S.fps < settings.minFps ? S.slowSecs + 1 : 0;
     if (S.slowSecs >= 5 && model === 'heavy' && settings.autoFallback) { fallbackToFull(); return; }
@@ -704,7 +735,7 @@ function wire() {
   $('card').addEventListener('click', () => { if (S.player && S.player.active) S.player.skip(); else hideCard(); });
   $('btnRetry').addEventListener('click', startSession);
   $('btnLoadHome').addEventListener('click', () => {
-    cancelAnimationFrame(S.raf); stopCamera(); releaseAwake(); S.phase = 'idle';
+    stopLoop(); stopCamera(); releaseAwake(); S.phase = 'idle';
     loadingDone(); renderHome(); show('home');
   });
 
