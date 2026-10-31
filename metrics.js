@@ -80,6 +80,13 @@ export function shoulderTurn(frames, visMin) {
   return (Math.atan2(Math.abs(l.z - r.z), Math.abs(l.x - r.x)) * 180) / Math.PI;
 }
 
+/** Front-toe direction in 3D (deg, 0 = at the camera, + = off side), or null. */
+export function stanceToe(frames, visMin, cfg, offSign) {
+  const F = frontSide(cfg.handedness);
+  const h = avgWorld(frames, F.HEEL, visMin), t = avgWorld(frames, F.TOE, visMin);
+  return h && t ? (Math.atan2((t.x - h.x) * offSign, -(t.z - h.z)) * 180) / Math.PI : null;
+}
+
 /** Distance between the ankles in 3D (metres). */
 function ankleGap3d(frames, visMin, F, B) {
   const a = avgWorld(frames, F.ANKLE, visMin), b = avgWorld(frames, B.ANKLE, visMin);

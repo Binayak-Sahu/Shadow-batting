@@ -2,7 +2,7 @@
 // The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
 // so you normally tune from the app, not by editing this file.
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.2.1';
 export const APP_BUILD = '__BUILD__'; // commit id, filled in by the GitHub Pages workflow
 
 // MediaPipe Tasks Vision, pinned to an exact version (not "latest").

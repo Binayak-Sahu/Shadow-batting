@@ -7,13 +7,13 @@
 
 import { APP_VERSION, mergeSettings } from './config.js';
 import { LandmarkSmoother, allVisible, framingCheck, essentialFor, frontSide } from './pose.js';
-import { RepDetector, computeBaseline, computeRepMetrics, isStill, shoulderTurn } from './metrics.js';
+import { RepDetector, computeBaseline, computeRepMetrics, isStill, shoulderTurn, stanceToe } from './metrics.js';
 
 const CALIB_SECONDS = 2;
 // Side-on check (3D shoulders): 90° = side-on like facing a bowler, 0° = chest to the phone.
 const MIN_TURN_CALIB = 40;   // calibrate only if at least this side-on
-const TURNED_TURN = 35;      // after calibrating side-on, below this for…
-const TURNED_SECONDS = 1.5;  // …this long while standing still = you turned → recalibrate
+const TURNED_TURN = 35;      // below this = facing the phone: a rep can't start / isn't graded
+const FACING_MSG_SECONDS = 3; // facing the phone this long between reps → show a hint
 const GESTURE_SECONDS = 2;
 
 /**
@@ -72,7 +72,8 @@ export class Pipeline {
     this.baseline = null;
     this.detector = null;
     this.notOkSince = null;
-    this.turnedSince = null;
+    this.facingSince = null;
+    this.facingMsg = false;
     this.phase = 'setup';
     this.calibFrames = [];
     this.calibStart = null;
@@ -81,8 +82,22 @@ export class Pipeline {
     this.essential = essentialFor(cfg.handedness);
   }
 
+  /** Reasons not to grade a rep (it would only give nonsense). null = fine. */
+  _implausible(rep) {
+    const vis = this.cfg.visibilityMin;
+    const pre = rep.frames.filter((f) => f.ok && f.t < rep.startT && f.t > rep.startT - this.cfg.rep.preWindow);
+    if (this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB) {
+      const turn = shoulderTurn(pre, vis);
+      if (turn !== null && turn < TURNED_TURN) return { reason: 'turned', text: 'Not counted — start the rep side-on' };
+    }
+    const toe = stanceToe(pre, vis, this.cfg, this.baseline.offSign);
+    if (toe !== null && toe < -20) return { reason: 'stance', text: 'Not counted — stance not recognised, recalibrate?' };
+    return null;
+  }
+
   recalibrate() {
-    this.turnedSince = null;
+    this.facingSince = null;
+    this.facingMsg = false;
     this.baseline = null;
     this.detector = null;
     this.phase = 'setup';
@@ -177,33 +192,34 @@ export class Pipeline {
       this.notOkSince = null;
       out.clearWarn = true;
     }
-    const ev = this.detector.update(frame);
-    // Turned to face the phone after calibrating side-on? Then every number
-    // would be wrong — recalibrate instead of measuring.
+    let ev = this.detector.update(frame);
     const d = this.detector;
-    if (!ev && frame.ok && this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB &&
-        d.state !== 'stepping' && d.state !== 'landed' && d.speed < cfg.rep.stillSpeed) {
+    // Side-on check between reps. We never recalibrate for it: holding the
+    // finish opens the shoulders for a moment, and when you turn back side-on
+    // the calibration is still valid. A rep just can't START square-on.
+    const sideOnCalib = this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB;
+    if (sideOnCalib && d.state !== 'stepping' && d.state !== 'landed') {
       const turn = shoulderTurn(this.recent.filter((f) => f.t > t - 0.5), vis);
-      if (turn !== null && turn < TURNED_TURN) {
-        if (this.turnedSince === null) this.turnedSince = t;
-        if (t - this.turnedSince >= TURNED_SECONDS) {
-          this.recalibrate(); go('setup');
-          out.turned = true;
-          out.msg = { text: 'You turned to face the phone — stand side-on again', kind: 'warn' };
-          return out;
+      const facing = turn !== null && turn < TURNED_TURN;
+      if (facing && ev && ev.type === 'armed') { d.state = 'settling'; d.stillSince = null; ev = null; }
+      if (facing && frame.ok) {
+        if (this.facingSince === null) this.facingSince = t;
+        if (t - this.facingSince > FACING_MSG_SECONDS && !this.facingMsg) {
+          this.facingMsg = true;
+          out.msg = { text: 'Turn side-on to start the next rep', kind: 'warn' };
         }
-      } else this.turnedSince = null;
-    } else if (d.state === 'stepping') this.turnedSince = null;
+      } else if (!facing) {
+        this.facingSince = null;
+        if (this.facingMsg) { this.facingMsg = false; out.clearWarn = true; }
+      }
+    }
     if (ev) {
-      if (ev.type === 'rep' && this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB) {
-        // was this rep played from a square-on stance? Then don't grade it.
-        const pre = ev.rep.frames.filter((f) => f.ok && f.t < ev.rep.startT && f.t > ev.rep.startT - cfg.rep.preWindow);
-        const turn = shoulderTurn(pre, vis);
-        if (turn !== null && turn < TURNED_TURN) {
-          this.recalibrate(); go('setup');
-          out.turned = true;
-          out.ev = { type: 'abort', reason: 'turned' };
-          out.msg = { text: 'You turned to face the phone — stand side-on again', kind: 'warn' };
+      if (ev.type === 'rep') {
+        const why = this._implausible(ev.rep);
+        if (why) {
+          out.ev = { type: 'abort', reason: why.reason };
+          out.rejected = why.text;
+          out.msg = { text: why.text, kind: 'warn' };
           return out;
         }
       }

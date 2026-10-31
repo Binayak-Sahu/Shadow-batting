@@ -266,6 +266,7 @@ async function startSession() {
   S.pipe = new Pipeline(settings);
   S.rec = settings.record ? new Recorder(settings, { ua: navigator.userAgent, shot: shotId }) : null;
   S.lastT = 0;
+  S.t0 = null;
   S.buffer = S.buffer || new ReplayBuffer(4, 20, 240);
   S.player = S.player || new ReplayPlayer($('replayCanvas'));
   S.session = {
@@ -443,6 +444,11 @@ function loop(meta) {
   const world = raw ? quantizeWorld(res.worldLandmarks && res.worldLandmarks[0]) : null;
   const t = quantizeTime(ts / 1000);
   S.lastT = t;
+  // Session clock (same zero as the recording), so a screen recording can be
+  // matched to the log second by second.
+  if (S.t0 === null) S.t0 = t;
+  const el = t - S.t0;
+  $('clock').textContent = `${Math.floor(el / 60)}:${(el % 60).toFixed(1).padStart(4, '0')}`;
   if (S.rec) S.rec.frame(raw, world, t, vw, vh);
 
   const out = S.pipe.push(raw, world, t, vw, vh);
@@ -481,7 +487,7 @@ function flashTip(text) {
 // Apply what the pipeline decided to the screen.
 function handleOut(out) {
   if (out.gesture) onGesture(out.gesture);
-  if (out.turned) { resetCalibrationUi(); speak('You turned. Stand side-on and hold still.'); beep('warn'); }
+  if (out.rejected) { speak(out.rejected.replace('—', '.')); beep('warn'); }
   if (out.phaseChanged) setPhase(out.phase);
   const gestureMsg = out.gesture && !out.gesture.fire;
   if (out.msg !== undefined && !gestureMsg) msg(out.msg && out.msg.text, out.msg && out.msg.kind);

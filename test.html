@@ -378,24 +378,26 @@ test('Gestures: one hand up 2 s → recalibrate, both hands up 2 s → finish', 
   return fired.join(', ');
 });
 
-test('Turned to face the phone → recalibrate, square-on reps not graded', () => {
+test('Facing the phone between reps → no recalibration, square-on rep not counted, side-on rep counted', () => {
   seed = 41;
   const side = rawFrames([{ type: 'still', dur: 2.6, opts: {} }, ...oneRep({ toe: 10 })]);
-  const sq = rawFrames([{ type: 'still', dur: 3, opts: { square: true } }, ...oneRep({ toe: 10, square: true })]);
-  const t0 = side[side.length - 1].t + 1 / FPS;
-  const frames = side.concat(sq.map((f) => ({ ...f, t: quantizeTime(f.t + t0) })));
+  const sq = rawFrames([{ type: 'still', dur: 4, opts: { square: true } }, ...oneRep({ toe: 10, square: true })]);
+  const back = rawFrames([{ type: 'still', dur: 1.5, opts: {} }, ...oneRep({ toe: 10 })]);
+  let t0 = 0;
+  const join = (arr) => { const out = arr.map((f) => ({ ...f, t: quantizeTime(f.t + t0) })); t0 = out[out.length - 1].t + 1 / FPS; return out; };
+  const frames = [...join(side), ...join(sq), ...join(back)];
   const p = new Pipeline(cfg);
   const log = [];
-  let reps = 0;
   for (const f of frames) {
     const o = p.push(f.raw, f.world, f.t, W, H_IMG);
     if (o.calibrated) log.push(`calibrated(turn ${o.calibrated.turn.toFixed(0)}°)`);
-    if (o.turned) log.push('turned→recalibrate');
-    if (o.result) { reps++; log.push('rep'); }
+    if (o.msg && /side-on/.test(o.msg.text)) log.push('hint:' + o.msg.text);
+    if (o.rejected) log.push('rejected');
+    if (o.result) log.push('rep');
   }
-  expect(reps === 1, 'reps=' + reps + ' ' + log.join(' → '));
-  expect(log.includes('turned→recalibrate'), log.join(' → '));
-  expect(p.phase !== 'live', 'calibrated while square-on: ' + log.join(' → '));
+  const calibs = log.filter((x) => x.startsWith('calibrated')).length;
+  expect(calibs === 1, 'recalibrated: ' + log.join(' → '));
+  expect(log.filter((x) => x === 'rep').length === 2, log.join(' → '));
   return log.join(' → ');
 });
 
