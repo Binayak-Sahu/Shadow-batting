@@ -15,6 +15,11 @@ const MIN_TURN_CALIB = 40;   // calibrate only if at least this side-on
 const TURNED_TURN = 35;      // below this = facing the phone: a rep can't start / isn't graded
 const FACING_MSG_SECONDS = 3; // facing the phone this long between reps → show a hint
 const NO_STEP_SECONDS = 0.8;  // ready, then chest opens to the phone without a front-foot step → say so
+// Stance check before every rep (compared with YOUR calibrated stance):
+const STANCE_MARK = 0.08;     // H: front foot further than this from where you calibrated → "back to your mark"
+const STANCE_HEAD = 0.06;     // H: head this much lower/higher than in calibration → knees too bent / too straight
+const STANCE_TURN_DROP = 25;  // deg less side-on than in calibration → "turn side-on more"
+const STANCE_REPEAT = 4;      // s before the same stance hint is spoken again
 const GESTURE_SECONDS = 2;
 
 /**
@@ -77,6 +82,8 @@ export class Pipeline {
     this.facingMsg = false;
     this.openSince = null;
     this.noStepSaid = false;
+    this.lastStartT = -Infinity;
+    this.stanceSaid = { text: '', t: -Infinity };
     this.phase = 'setup';
     this.calibFrames = [];
     this.calibStart = null;
@@ -85,12 +92,36 @@ export class Pipeline {
     this.essential = essentialFor(cfg.handedness);
   }
 
+  /** What's different from the calibrated stance (null = good to go). */
+  _stanceIssue(t) {
+    const b = this.baseline, vis = this.cfg.visibilityMin;
+    const fr = this.recent.filter((f) => f.ok && f.t > t - 0.4);
+    if (fr.length < 2) return null;
+    const avg = (i) => ({ x: fr.reduce((s, f) => s + f.lm[i].x, 0) / fr.length, y: fr.reduce((s, f) => s + f.lm[i].y, 0) / fr.length });
+    const H = b.heightPx;
+    if (b.turn !== null && b.turn >= MIN_TURN_CALIB) {
+      const turn = shoulderTurn(fr, vis);
+      if (turn !== null && turn < Math.max(MIN_TURN_CALIB + 5, b.turn - STANCE_TURN_DROP)) return 'Turn side-on more — front shoulder to the phone';
+    }
+    if (b.ankleF) {
+      const a = avg(this.F.ANKLE);
+      if (Math.hypot(a.x - b.ankleF.x, a.y - b.ankleF.y) / H > STANCE_MARK) return 'Go back to your starting mark';
+    }
+    if (b.nose) {
+      const dy = (avg(0).y - b.nose.y) / H; // + = head lower than at calibration
+      if (dy > STANCE_HEAD) return 'Stand a little taller — knees too bent';
+      if (dy < -STANCE_HEAD) return 'Bend your knees a little — get into your stance';
+    }
+    return null;
+  }
+
   /** Reasons not to grade a rep (it would only give nonsense). null = fine. */
   _implausible(rep) {
     const vis = this.cfg.visibilityMin;
     // Front foot off the bottom of the picture at landing: MediaPipe still
     // reports it as "visible" but only guesses → toe/step/head numbers are junk.
-    const plant = rep.frames.filter((f) => f.ok && f.t >= rep.landT);
+    const plant = rep.frames.filter((f) => f.lm && f.t >= rep.landT &&
+      f.lm[this.F.HEEL].v >= vis && f.lm[this.F.TOE].v >= vis); // hidden by the bat ≠ off-screen
     const low = plant.filter((f) => Math.max(f.lm[this.F.HEEL].y, f.lm[this.F.TOE].y) > FOOT_OFF_EDGE * f.h).length;
     if (plant.length && low / plant.length > 0.3) {
       return { reason: 'offscreen', text: 'Not counted — your front foot left the picture. Move the phone back' };
@@ -197,7 +228,10 @@ export class Pipeline {
     // live
     if (!frame.ok) {
       if (this.notOkSince === null) this.notOkSince = t;
-      if (t - this.notOkSince > 0.7) out.msg = { text: frame.lm ? 'Step back / feet not visible' : 'Can’t see you — step into frame', kind: 'warn' };
+      // Only the front leg hidden (head + hips seen) = usually the bat in front
+      // of the pad: normal for a moment, so don't nag unless it lasts.
+      const core = !!frame.lm && [0, 23, 24].every((i) => frame.lm[i].v >= vis);
+      if (t - this.notOkSince > (core ? 2.5 : 0.7)) out.msg = { text: frame.lm ? 'Step back / feet not visible' : 'Can’t see you — step into frame', kind: 'warn' };
     } else if (this.notOkSince !== null) {
       this.notOkSince = null;
       out.clearWarn = true;
@@ -214,7 +248,8 @@ export class Pipeline {
       if (facing && ev && ev.type === 'armed') { d.state = 'settling'; d.stillSince = null; ev = null; }
       // Played the shot (chest opened to the phone) but the front foot never
       // stepped: nothing would be counted — tell the batter why.
-      if (d.state === 'armed' && facing && frame.ok) {
+      // (Not if a step started recently: the bat may have hidden the foot.)
+      if (d.state === 'armed' && facing && frame.ok && t - this.lastStartT > 3) {
         if (this.openSince === null) this.openSince = t;
         if (!this.noStepSaid && t - this.openSince >= NO_STEP_SECONDS) {
           this.noStepSaid = true;
@@ -236,6 +271,23 @@ export class Pipeline {
         if (this.facingMsg) { this.facingMsg = false; out.clearWarn = true; }
       }
     }
+    // Stance check: the next rep only arms when your stance matches the one
+    // you calibrated; otherwise say what to fix. Arming = the "Ready" signal.
+    if (ev && ev.type === 'armed' && cfg.stanceCheck) {
+      const issue = this._stanceIssue(t);
+      if (issue) {
+        d.state = 'settling'; d.stillSince = null; ev = null;
+        if (issue !== this.stanceSaid.text || t - this.stanceSaid.t > STANCE_REPEAT) {
+          this.stanceSaid = { text: issue, t };
+          out.stanceIssue = issue;
+          out.msg = { text: issue, kind: 'warn' };
+        }
+      } else {
+        if (this.stanceSaid.text) out.clearWarn = true;
+        this.stanceSaid = { text: '', t: -Infinity };
+      }
+    }
+    if (ev && (ev.type === 'start' || ev.type === 'land')) this.lastStartT = t;
     if (ev) {
       if (ev.type === 'rep') {
         const why = this._implausible(ev.rep);

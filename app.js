@@ -223,7 +223,7 @@ function initAudio() {
 function beep(g) {
   if (!settings.beep || !S.audio) return;
   try {
-    const notes = g === 'good' ? [[880, 0.12]] : g === 'warn' ? [[560, 0.1], [560, 0.1]] : [[300, 0.28]];
+    const notes = g === 'ready' ? [[1320, 0.06], [1320, 0.06]] : g === 'good' ? [[880, 0.12]] : g === 'warn' ? [[560, 0.1], [560, 0.1]] : [[300, 0.28]];
     let t = S.audio.currentTime;
     for (const [f, d] of notes) {
       const o = S.audio.createOscillator(), gain = S.audio.createGain();
@@ -519,6 +519,7 @@ function flashTip(text) {
 function handleOut(out) {
   if (out.gesture) onGesture(out.gesture);
   if (out.rejected) { speak(out.rejected.replace('—', '.')); beep('warn'); }
+  if (out.stanceIssue) { speak(out.stanceIssue.replace('—', '.')); }
   if (out.phaseChanged) setPhase(out.phase);
   const gestureMsg = out.gesture && !out.gesture.fire;
   if (out.msg !== undefined && !gestureMsg) msg(out.msg && out.msg.text, out.msg && out.msg.kind);
@@ -527,6 +528,7 @@ function handleOut(out) {
   if (out.calibrated) {
     const base = out.calibrated;
     S.baseline = base;
+    S.readyCount = 0;
     setSideLabels(base);
     if (S.rec) S.rec.event(out.frame.t, 'calibrated', { offSign: base.offSign, heightPx: Math.round(base.heightPx) });
     const side = base.offScreenSide.toUpperCase();
@@ -537,7 +539,12 @@ function handleOut(out) {
   }
   const ev = out.ev;
   if (!ev) return;
-  if (ev.type === 'armed') $('phaseLabel').textContent = 'READY';
+  $('phaseLabel').classList.toggle('ready', ev.type === 'armed');
+  if (ev.type === 'armed') {
+    // Stance checked → the go signal (skip the first one: "Ready" was just said at calibration)
+    $('phaseLabel').textContent = 'READY';
+    if (S.readyCount++ > 0) { beep('ready'); if (settings.stanceCheck) speak('Ready'); }
+  }
   else if (ev.type === 'start') $('phaseLabel').textContent = 'STEP…';
   else if (ev.type === 'land') $('phaseLabel').textContent = 'HOLD';
   else if (ev.type === 'abort') $('phaseLabel').textContent = 'GET SET';

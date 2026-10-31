@@ -23,6 +23,8 @@
 import { LM, frontSide, backSide } from './pose.js';
 
 const NOSE_TO_HEIGHT = 0.88;
+const MAX_HIDDEN = 1.5;   // s the front leg may stay hidden (bat in front of the pad) during a rep
+const HIDDEN_LAND = 0.15; // s hidden after a real step → it has landed where it was last seen
 
 // ---------------------------------------------------------------------------
 // Averaging helpers
@@ -93,8 +95,11 @@ function ankleGap3d(frames, visMin, F, B) {
   return a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : null;
 }
 
+// Frames with a pose in [t0, t1]. Not only "ok" frames: at landing the bat
+// often hides the front leg, but the head/hips/back leg are still useful.
+// Every measurement checks the visibility of the points it uses.
 function between(frames, t0, t1) {
-  return frames.filter((f) => f.ok && f.t >= t0 && f.t <= t1);
+  return frames.filter((f) => f.lm && f.t >= t0 && f.t <= t1);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +206,7 @@ export class RepDetector {
     this.stillSince = null;
     this.step = null;
     this.lastOkT = null;
+    this.lastOkFrame = null;
   }
   setScale(heightPx) { this.H = heightPx; }
 
@@ -230,6 +236,43 @@ export class RepDetector {
     while (this.hist.length && frame.t - this.hist[0].t > 5) this.hist.shift();
 
     if (!frame.ok) {
+      // Front leg hidden while the body is still seen: in a front-foot
+      // defence the bat comes down in front of the front pad, so from the
+      // bowler's end it covers the knee/ankle/foot right at landing.
+      const vis = this.cfg.visibilityMin;
+      const coreOk = !!frame.lm && [LM.NOSE, LM.L_HIP, LM.R_HIP].every((i) => frame.lm[i].v >= vis);
+      if (coreOk && (this.state === 'stepping' || this.state === 'landed')) {
+        const s = this.step;
+        if (s.hiddenSince == null) s.hiddenSince = frame.t;
+        if (this.state === 'landed') {
+          return frame.t >= s.landT + R.finishDelay ? this._emitRep(frame.t) : null;
+        }
+        if (frame.t - s.hiddenSince > MAX_HIDDEN) {
+          this.state = 'settling'; this.stillSince = null; this.step = null;
+          return { type: 'abort', reason: 'lost' };
+        }
+        // Covered after a real step forward: it has landed where last seen.
+        const ls = s.lastSeen;
+        if (ls && frame.t - s.hiddenSince >= HIDDEN_LAND && ls.disp >= R.minStep && ls.forward >= R.minForward) {
+          s.landT = ls.t; s.hidden = true;
+          this.state = 'landed';
+          return { type: 'land', t: s.landT, hidden: true };
+        }
+        return null;
+      }
+      // Ready, the foot stepped (slowly, so no 'start' yet) and then the bat
+      // covered it: if the last time we saw it, it had already moved a real
+      // step forward, the step happened — it landed where it was last seen.
+      if (coreOk && this.state === 'armed' && this.lastOkFrame && this.ref) {
+        const lo = this.lastOkFrame, q = lo.lm[this.A];
+        const disp = Math.hypot(q.x - this.ref.x, q.y - this.ref.y) / this.H;
+        const forward = (q.y - this.ref.y) / this.H;
+        if (frame.t - lo.t >= HIDDEN_LAND && disp >= R.minStep && forward >= R.minForward) {
+          this.step = { startT: this._findStart(lo.t), ref: { ...this.ref }, lowCount: 0, landCandidate: null, landT: lo.t, hidden: true };
+          this.state = 'landed';
+          return { type: 'land', t: lo.t, hidden: true };
+        }
+      }
       if (this.state === 'stepping' || this.state === 'landed') {
         this.state = 'settling'; this.stillSince = null; this.step = null;
         return { type: 'abort', reason: 'lost' };
@@ -242,6 +285,7 @@ export class RepDetector {
     // between — start fresh instead of guessing a step across the gap.
     const gap = this.lastOkT != null ? frame.t - this.lastOkT : 0;
     this.lastOkT = frame.t;
+    this.lastOkFrame = frame;
     if (gap > 0.25 && this.state === 'armed') {
       this.state = 'settling'; this.stillSince = null;
       return { type: 'abort', reason: 'lost' };
@@ -277,15 +321,7 @@ export class RepDetector {
           this.ref = { x: this.ref.x * 0.9 + p.x * 0.1, y: this.ref.y * 0.9 + p.y * 0.1 };
         }
         if (disp > R.startDisp && speed > R.startSpeed) {
-          // Walk back to find when the foot really started to move.
-          let startT = t;
-          for (let i = this.hist.length - 1; i >= 0; i--) {
-            const f = this.hist[i];
-            if (!f.ok) break;
-            const q = f.lm[this.A];
-            if (Math.hypot(q.x - this.ref.x, q.y - this.ref.y) / this.H < R.startDisp * 0.3) break;
-            startT = f.t;
-          }
+          const startT = this._findStart(t);
           this.step = { startT, ref: { ...this.ref }, lowCount: 0, landCandidate: null };
           this.state = 'stepping';
           return { type: 'start', t: startT };
@@ -294,6 +330,8 @@ export class RepDetector {
       }
       case 'stepping': {
         const s = this.step;
+        s.hiddenSince = null;
+        s.lastSeen = { t, disp: Math.hypot(p.x - s.ref.x, p.y - s.ref.y) / this.H, forward: (p.y - s.ref.y) / this.H };
         if (t - s.startT > R.maxStepTime) {
           this.state = 'settling'; this.stillSince = null; this.prevRef = s.ref;
           return { type: 'abort', reason: 'slow' };
@@ -304,6 +342,9 @@ export class RepDetector {
         if (s.lowCount < R.settleFrames) return null;
         const disp = Math.hypot(p.x - s.ref.x, p.y - s.ref.y) / this.H;
         const forward = (p.y - s.ref.y) / this.H;
+        // Paused part-way (still out of the stance, not a full step yet): some
+        // batters step in two slow stages — keep waiting (until maxStepTime).
+        if (disp < R.minStep && disp >= R.startDisp && forward >= 0) { s.lowCount = 0; s.landCandidate = null; return null; }
         if (disp < R.minStep || forward < R.minForward) {
           // foot came back, or moved backwards (e.g. returning to stance)
           this.state = 'settling'; this.stillSince = s.landCandidate;
@@ -316,22 +357,45 @@ export class RepDetector {
       case 'landed': {
         const s = this.step;
         if (t < s.landT + R.finishDelay) return null;
-        const rep = {
-          startT: s.startT,
-          landT: s.landT,
-          finishT: t,
-          ref: s.ref,
-          frames: this.hist.filter((f) => f.t >= s.startT - R.preWindow - 0.05 && f.t <= t),
-        };
-        this.prevRef = s.ref;
-        this.state = 'rearm';
-        this.stillSince = null;
-        this.step = null;
-        return { type: 'rep', rep };
+        return this._emitRep(t);
       }
       default:
         return null;
     }
+  }
+
+  /** Walk back from time t to when the front foot really left the stance. */
+  _findStart(t) {
+    const R = this.cfg.rep;
+    let startT = t;
+    for (let i = this.hist.length - 1; i >= 0; i--) {
+      const f = this.hist[i];
+      if (f.t > t) continue;
+      if (!f.ok) break;
+      const q = f.lm[this.A];
+      if (Math.hypot(q.x - this.ref.x, q.y - this.ref.y) / this.H < R.startDisp * 0.3) break;
+      startT = f.t;
+    }
+    return startT;
+  }
+
+  /** Landed + held the finish: hand over the rep (frames from just before the step). */
+  _emitRep(t) {
+    const R = this.cfg.rep;
+    const s = this.step;
+    const rep = {
+      startT: s.startT,
+      landT: s.landT,
+      finishT: t,
+      ref: s.ref,
+      hidden: !!s.hidden, // front foot was covered (by the bat) at landing
+      frames: this.hist.filter((f) => f.t >= s.startT - R.preWindow - 0.05 && f.t <= t),
+    };
+    this.prevRef = s.ref;
+    this.state = 'rearm';
+    this.stillSince = null;
+    this.step = null;
+    return { type: 'rep', rep };
   }
 }
 
@@ -436,7 +500,9 @@ export function computeRepMetrics(rep, baseline, cfg) {
       let dx = aLland.x - aLpre.x;
       if (aRpre && aRland) dx -= aRland.x - aRpre.x;
       const v = (dx * off) / H;
-      const g = grade(Math.abs(v), th.stepWide);
+      // A little across to the off side is normal (step to the line of a ball
+      // on or outside off stump); stepping to leg is graded strictly.
+      const g = grade(Math.abs(v), v >= 0 ? th.stepWideOff : th.stepWide);
       const label = g === 'good' ? 'In line'
         : (g === 'warn' ? 'Slightly wide' : 'Wide') + (v >= 0 ? ' (off)' : ' (leg)');
       m.stepWide = { value: v, grade: g, label, dir: v >= 0 ? 'off' : 'leg' };

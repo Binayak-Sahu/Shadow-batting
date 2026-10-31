@@ -80,6 +80,7 @@ a { color: var(--accent); }
 }
 .count { font-size: clamp(34px, 11vw, 64px); font-weight: 800; font-variant-numeric: tabular-nums; }
 .score { font-size: clamp(28px, 9vw, 52px); font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+.phase.ready { color: var(--good); }
 .phase { font-size: clamp(16px, 5vw, 24px); font-weight: 700; letter-spacing: 0.1em; color: var(--front); }
 
 .sidelabel {

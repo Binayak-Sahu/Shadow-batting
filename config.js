@@ -2,7 +2,7 @@
 // The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
 // so you normally tune from the app, not by editing this file.
 
-export const APP_VERSION = '1.4.0';
+export const APP_VERSION = '1.5.0';
 export const APP_BUILD = '__BUILD__'; // commit id, filled in by the GitHub Pages workflow
 
 // MediaPipe Tasks Vision, pinned to an exact version (not "latest").
@@ -45,6 +45,7 @@ export const DEFAULTS = {
   replay: true,
   record: true,             // keep this session's landmarks (no video) for "Download recording"
   debug: false,
+  stanceCheck: true,        // before every rep: same stance as calibrated? then "Ready"
   experimental: false,      // also grade Base + Head forward (3D depth — not reliable yet)
   cardDetails: false,       // result card: show every check's number (otherwise just the one cue)             // start with the debug numbers shown (or tap the fps line)
   replaySpeed: 0.4,         // 0.4 = 40% speed slow motion
@@ -61,7 +62,7 @@ export const DEFAULTS = {
   rep: {
     speedWindow: 0.12,   // s — speed is measured over this time window
     stillSpeed: 0.10,    // below this the front foot counts as still
-    startSpeed: 0.18,    // front foot faster than this = step has started
+    startSpeed: 0.14,    // front foot faster than this = step has started (0.18 missed slow real steps)
     startDisp: 0.025,    // H — and has moved at least this far from stance
     minStep: 0.04,       // H — a real step moves the foot at least this far
     minForward: 0.02,    // H — the foot must end closer to the camera (lower in the image)
@@ -77,7 +78,8 @@ export const DEFAULTS = {
   // Green if |value| <= good, amber if <= warn, red above.
   thresholds: {
     toeAngle:     { good: 25,   warn: 45 },   // deg, 0 = toe straight at the camera/bowler
-    stepWide:     { good: 0.05, warn: 0.10 }, // H sideways vs stance
+    stepWide:     { good: 0.05, warn: 0.10 }, // H sideways to the LEG side vs stance
+    stepWideOff:  { good: 0.09, warn: 0.15 }, // H sideways to the OFF side (a little across is normal)
     kneeLift:     { good: 0.05, warn: 0.10 }, // H the front knee rises
     headBob:      { good: 0.025, warn: 0.045 },// H up-and-down of the nose during the step
     headOverFoot: { good: 0.05, warn: 0.09 }, // H head to the LEG side of front knee/ankle at finish
@@ -97,6 +99,7 @@ export const SETTINGS_FIELDS = [
   { key: 'beep', label: 'Beep after each rep', type: 'toggle' },
   { key: 'voice', label: 'Speak rep number + cue (voice)', type: 'toggle' },
   { key: 'gestures', label: 'Hands-up gestures (finish / recalibrate)', type: 'toggle' },
+  { key: 'stanceCheck', label: 'Stance check + "Ready" before every rep', type: 'toggle' },
   { key: 'replay', label: 'Slow-motion replay', type: 'toggle' },
   { key: 'record', label: 'Keep recording for download (no video)', type: 'toggle' },
   { key: 'debug', label: 'Show debug numbers', type: 'toggle' },
@@ -115,8 +118,10 @@ export const SETTINGS_FIELDS = [
   { group: 'Thresholds — green / amber limits' },
   { key: 'thresholds.toeAngle.good', label: 'Toe angle green ≤ (deg)', type: 'number', min: 5, max: 60, step: 1 },
   { key: 'thresholds.toeAngle.warn', label: 'Toe angle amber ≤ (deg)', type: 'number', min: 10, max: 80, step: 1 },
-  { key: 'thresholds.stepWide.good', label: 'Step wide green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
-  { key: 'thresholds.stepWide.warn', label: 'Step wide amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
+  { key: 'thresholds.stepWide.good', label: 'Step to leg side green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.stepWide.warn', label: 'Step to leg side amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
+  { key: 'thresholds.stepWideOff.good', label: 'Step to off side green ≤ (H)', type: 'number', min: 0.01, max: 0.4, step: 0.005 },
+  { key: 'thresholds.stepWideOff.warn', label: 'Step to off side amber ≤ (H)', type: 'number', min: 0.02, max: 0.5, step: 0.005 },
   { key: 'thresholds.kneeLift.good', label: 'Knee lift green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
   { key: 'thresholds.kneeLift.warn', label: 'Knee lift amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
   { key: 'thresholds.headBob.good', label: 'Head bob green ≤ (H)', type: 'number', min: 0.005, max: 0.2, step: 0.005 },
@@ -143,10 +148,11 @@ export function cloneDefaults() {
 }
 // Bump SETTINGS_VERSION when a new default must override what an older
 // version of the app saved on the phone; add the change to MIGRATIONS.
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 4;
 const MIGRATIONS = {
   2: (s) => { s.model = 'heavy'; s.voice = true; }, // v1.1: Heavy model + spoken cues are the new defaults
   3: (s) => { if (s.thresholds) delete s.thresholds.baseWidth; }, // v1.2: base is now measured in H, not a fraction
+  4: (s) => { if (s.rep && s.rep.startSpeed === 0.18) s.rep.startSpeed = 0.14; }, // v1.5: slow real steps were missed
 };
 export function mergeSettings(saved) {
   if (saved && typeof saved === 'object') {

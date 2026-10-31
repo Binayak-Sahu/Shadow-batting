@@ -213,7 +213,7 @@ export function dist(a, b) {
 // (10–15% of the picture height when the phone is close). In stance it must
 // therefore sit well above the bottom edge, or it lands off-screen and
 // MediaPipe just guesses where it is (found in the first real sessions).
-export const FEET_MAX = 0.78;      // stance feet at most 78% down the picture (the dashed line)
+export const FEET_MAX = 0.84;      // stance feet at most 84% down the picture (the dashed line)
 export const FOOT_OFF_EDGE = 0.95; // landed foot below 95% = left the picture → rep not graded
 
 export function framingCheck(lm, w, h, visMin, handedness = 'right') {

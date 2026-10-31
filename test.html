@@ -420,7 +420,7 @@ test('Front foot lands off the bottom of the picture → rep not counted', () =>
 
 test('Setup: feet too low in the picture → asked to move the phone back', () => {
   const frames = rawFrames([{ type: 'still', dur: 1, opts: {} }]);
-  const low = frames.map((f) => ({ ...f, raw: f.raw.map((q) => ({ ...q, y: q.y + 0.12 })) }));
+  const low = frames.map((f) => ({ ...f, raw: f.raw.map((q) => ({ ...q, y: q.y + 0.18 })) }));
   const p = new Pipeline(cfg);
   let m = '';
   for (const f of low) { const o = p.push(f.raw, f.world, f.t, W, H_IMG); if (o.msg) m = o.msg.text; }
@@ -437,6 +437,46 @@ test('Shot played without a front-foot step → "No front-foot step seen"', () =
   for (const f of frames) { const o = p.push(f.raw, f.world, f.t, W, H_IMG); if (o.rejected) said.push(o.rejected); if (o.result) said.push('rep'); }
   expect(said.length === 1 && /No front-foot step/.test(said[0]), said.join(' | ') || 'nothing said');
   return said[0];
+});
+
+// hide the front leg (knee, ankle, heel, toe) like a bat in front of the pad
+const hideFrontLeg = (f) => ({ ...f, raw: f.raw.map((q, i) => ([25, 27, 29, 31].includes(i) ? { ...q, visibility: 0.1 } : q)) });
+
+test('Bat hides the front leg right after landing → rep still counted', () => {
+  seed = 71;
+  // step lands at ~3.05 s; front leg hidden from 3.0 s for 1.2 s
+  const frames = rawFrames([{ type: 'still', dur: 2.6, opts: {} }, ...oneRep({ toe: 10 }).slice(1)]).map((f) => (f.t >= 3.0 && f.t < 4.2 ? hideFrontLeg(f) : f));
+  const p = new Pipeline(cfg);
+  const log = [];
+  for (const f of frames) {
+    const o = p.push(f.raw, f.world, f.t, W, H_IMG);
+    if (o.ev && o.ev.type !== 'armed') log.push(o.ev.type + (o.ev.reason ? ':' + o.ev.reason : '') + (o.ev.hidden ? '(hidden)' : ''));
+    if (o.rejected) log.push('said: ' + o.rejected);
+  }
+  expect(log.includes('rep') && !log.some((x) => x.startsWith('abort')) && !log.some((x) => x.includes('No front-foot step')), log.join(' → '));
+  return log.join(' → ');
+});
+
+test('Stance check: drifted off the mark → hint, no "Ready"; back on the mark → Ready', () => {
+  seed = 81;
+  const base = rawFrames([{ type: 'still', dur: 2.6, opts: {} }, ...oneRep({ toe: 10 }).slice(0, 4)]); // calibrate, rep, step back
+  let t0 = base[base.length - 1].t + 1 / FPS;
+  const shift = (fr, dx) => fr.map((f) => ({ ...f, t: quantizeTime((t0 += 1 / FPS)), raw: f.raw.map((q) => ({ ...q, x: q.x + dx })) }));
+  const still = rawFrames([{ type: 'still', dur: 1.5, opts: {} }]);
+  const longStill = rawFrames([{ type: 'still', dur: 3.5, opts: {} }]); // long enough that the app tries to arm there
+  const frames = [...base, ...shift(longStill, 0.12), ...shift(still, 0)]; // 0.12 of the picture ≈ 0.2 H off the mark
+  const p = new Pipeline(cfg);
+  const log = [];
+  for (const f of frames) {
+    const o = p.push(f.raw, f.world, f.t, W, H_IMG);
+    if (o.stanceIssue) log.push('hint: ' + o.stanceIssue);
+    if (o.ev && o.ev.type === 'armed') log.push('READY');
+    if (o.result) log.push('rep');
+  }
+  const i = log.indexOf('rep');
+  const after = log.slice(i + 1);
+  expect(after[0] && after[0].includes('starting mark') && after.includes('READY') && after.indexOf('READY') > 0, log.join(' → '));
+  return log.join(' → ');
 });
 
 const rows = document.getElementById('rows');
