@@ -175,6 +175,7 @@ function releaseAwake() { try { S.wakeLock && S.wakeLock.release(); } catch (e) 
 // Coming back: restart it and recalibrate, keeping the reps done so far.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { if (S.session && S.stream && !S.paused) pauseSession(); return; }
+  if (!S.session) updateIfNewer();
   if (S.paused) resumeSession();
   else if (S.phase !== 'idle') keepAwake();
 });
@@ -242,8 +243,38 @@ function speak(text) {
 }
 
 // ---------------------------------------------------------------- session flow
+// ---------------------------------------------------------------- updates
+// An open app keeps the code it loaded, so after a deploy it would stay on the
+// old version until closed. Ask the server which version is current (bypassing
+// every cache) and reload if it's newer — only when no session is running.
+async function newerVersionOnline() {
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 2500);
+    const res = await fetch(`./config.js?check=${Date.now()}`, { cache: 'no-store', signal: ctl.signal });
+    clearTimeout(timer);
+    if (!res.ok) return false;
+    const txt = await res.text();
+    const v = (txt.match(/APP_VERSION = '([^']+)'/) || [])[1];
+    const b = (txt.match(/APP_BUILD = '([^']+)'/) || [])[1];
+    return !!v && (v !== APP_VERSION || (!!b && b !== APP_BUILD));
+  } catch (e) {
+    return false; // offline or slow: just carry on with this version
+  }
+}
+let reloading = false;
+async function updateIfNewer() {
+  if (reloading || S.session || S.phase !== 'idle' || !navigator.onLine) return false;
+  if (!(await newerVersionOnline())) return false;
+  reloading = true;
+  try { sessionStorage.setItem('sm.updated', '1'); } catch (e) { /* ignore */ }
+  location.reload();
+  return true;
+}
+
 async function startSession() {
   if (S.starting) return;
+  if (await updateIfNewer()) return; // new version: reload first (tap Start again)
   S.starting = true;
   initAudio();
   show('live');
@@ -868,7 +899,7 @@ function wire() {
     renderSummary(all.length ? all[all.length - 1] : null);
     show('summary');
   });
-  document.querySelectorAll('[data-home]').forEach((b) => b.addEventListener('click', () => { renderHome(); show('home'); }));
+  document.querySelectorAll('[data-home]').forEach((b) => b.addEventListener('click', () => { renderHome(); show('home'); updateIfNewer(); }));
 
   $('btnStop').addEventListener('click', endSession);
   $('btnRecal').addEventListener('click', () => {
@@ -941,6 +972,12 @@ wire();
 renderHome();
 show('home');
 flushQueue(upStatus); // anything left from an offline session
+try {
+  if (sessionStorage.getItem('sm.updated')) {
+    sessionStorage.removeItem('sm.updated');
+    upStatus(`Updated to v${APP_VERSION} ✓ — tap Start session`, 'good');
+  }
+} catch (e) { /* ignore */ }
 // Updates: the service worker installs a new version in the background. When it
 // takes over, offer a reload (never in the middle of a session).
 if ('serviceWorker' in navigator) {

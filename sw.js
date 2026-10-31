@@ -66,10 +66,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   // App files: network first (so updates show up), fall back to cache offline.
+  // cache: 'no-cache' = always ask GitHub if the file changed (cheap: a 304 if
+  // not). Without it Chrome reuses its own copy for up to 10 minutes after a
+  // deploy (GitHub Pages sends max-age=600), so a new version could be missed.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE_VERSION);
     try {
-      const res = await fetch(req);
+      const res = await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
       if (res.ok) cache.put(req, res.clone());
       return res;
     } catch (e) {
