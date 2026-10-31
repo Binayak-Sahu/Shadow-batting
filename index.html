@@ -33,6 +33,7 @@
       <span>A new version is ready.</span>
       <button id="btnReload" class="btn small primary">Reload</button>
     </div>
+    <p id="upHome" class="tiny up"></p>
     <p id="version" class="tiny"></p>
     <noscript><p class="big-note">This app needs JavaScript turned on.</p></noscript>
   </section>
@@ -114,7 +115,11 @@
       <button id="btnCsvAll" class="btn link">Export all sessions (CSV)</button>
     </div>
     <div id="recRow" class="hidden">
-      <button id="btnRec" class="btn">Download recording</button>
+      <p id="upNote" class="tiny up"></p>
+      <div class="row2">
+        <button id="btnShare" class="btn">Share recording</button>
+        <button id="btnRec" class="btn">Download</button>
+      </div>
       <p id="recNote" class="tiny"></p>
     </div>
     <div class="row2">
@@ -128,6 +133,15 @@
     <h1>Settings</h1>
     <p class="sub">H = your height in the picture. 0.05 H ≈ 9 cm if you are 183 cm.</p>
     <form id="settingsForm" onsubmit="return false"></form>
+    <h3>GitHub upload (recordings)</h3>
+    <p class="sub">After each session the recording (landmarks only, no video) goes to your <b>private</b> repo, so Claude can check it. The token stays on this phone.</p>
+    <form id="ghForm" onsubmit="return false" autocomplete="off">
+      <label class="srow"><span>Auto-upload after each session</span><input id="ghAuto" type="checkbox"></label>
+      <label class="srow"><span>Repo (owner/name)</span><input id="ghRepo" type="text" autocapitalize="off" spellcheck="false"></label>
+      <label class="srow"><span>Token</span><input id="ghToken" type="password" autocapitalize="off" spellcheck="false" placeholder="github_pat_…"></label>
+    </form>
+    <button id="btnGhTest" class="btn">Save &amp; test connection</button>
+    <p id="ghNote" class="tiny"></p>
     <p id="settingsNote" class="tiny"></p>
     <div class="row2">
       <button id="btnSaveSettings" class="btn primary">Save</button>

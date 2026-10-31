@@ -4,6 +4,7 @@ import { createPoseTracker, LM, frontSide } from './pose.js';
 import { summarizeSession, METRICS } from './metrics.js';
 import { ReplayBuffer, ReplayPlayer, makeView, drawSkeleton } from './replay.js';
 import { Pipeline, Recorder, quantizeRaw, quantizeWorld, quantizeTime, compactResult } from './pipeline.js';
+import { getGh, setGh, ghReady, testConnection, queueAdd, flushQueue, recordingPath } from './upload.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -28,7 +29,7 @@ const S = {
   session: null, buffer: null, player: null, cardTimer: 0, notOkSince: null,
   fpsCount: 0, fpsT: 0, fps: 0, slowSecs: 0, slowTipShown: false,
   pipe: null, rec: null, lastRec: null, lastT: 0, debug: false, debugT: 0, lastResult: null,
-  paused: false, gestureShown: false, gestureTimer: 0,
+  lastRecFile: null, paused: false, gestureShown: false, gestureTimer: 0,
   wakeLock: null, audio: null, pendingEnd: false, starting: false,
   modelOverride: null, switching: false, fpsFrom: 0,
 };
@@ -263,7 +264,7 @@ async function startSession() {
   }
   loadingDone();
   S.pipe = new Pipeline(settings);
-  S.rec = settings.record ? new Recorder(settings, { ua: navigator.userAgent }) : null;
+  S.rec = settings.record ? new Recorder(settings, { ua: navigator.userAgent, shot: shotId }) : null;
   S.lastT = 0;
   S.buffer = S.buffer || new ReplayBuffer(4, 20, 240);
   S.player = S.player || new ReplayPlayer($('replayCanvas'));
@@ -323,8 +324,13 @@ async function endSession() {
   S.session = null;
   S.lastRec = S.rec && S.rec.frameCount ? S.rec : null;
   S.rec = null;
+  S.lastRecFile = null;
   $('recRow').classList.toggle('hidden', !S.lastRec);
-  if (S.lastRec) $('recNote').textContent = `${S.lastRec.frameCount} frames, landmarks only (no video). Open it in Lab to re-run with new settings.`;
+  $('upNote').textContent = '';
+  if (S.lastRec) {
+    $('recNote').textContent = `${S.lastRec.frameCount} frames, landmarks only (no video). Open it in Lab to re-run with new settings.`;
+    queueRecording(S.lastRec, sess ? sess.reps : []);
+  }
   if (sess && sess.reps.length) {
     saveSession(sess);
     renderSummary(sess);
@@ -332,6 +338,41 @@ async function endSession() {
     renderSummary(null);
   }
   show('summary');
+}
+
+// ---------------------------------------------------------------- recordings → GitHub
+function upStatus(text, kind = '') {
+  for (const id of ['upNote', 'upHome']) {
+    const el = $(id);
+    el.textContent = text;
+    el.className = 'tiny up ' + kind;
+  }
+}
+/** The recording as a File (gzip), made once per session. */
+async function recordingFile(rec) {
+  if (S.lastRecFile && S.lastRecFile.rec === rec) return S.lastRecFile;
+  const { blob, ext } = await rec.blob();
+  const name = `shadow-mirror-rec-${rec.data.date.slice(0, 16).replace(/[:T]/g, '-')}.${ext}`;
+  S.lastRecFile = { rec, blob, ext, name, file: new File([blob], name, { type: ext.endsWith('gz') ? 'application/gzip' : 'application/json' }) };
+  return S.lastRecFile;
+}
+async function queueRecording(rec, reps) {
+  if (!ghReady()) {
+    upStatus('Tip: Settings → GitHub upload sends recordings to your private repo automatically.');
+    return;
+  }
+  try {
+    const f = await recordingFile(rec);
+    const avg = reps.length ? summarizeSession(reps).avgScore : 0;
+    await queueAdd({
+      path: recordingPath(rec, f.ext, reps.length), blob: f.blob, added: Date.now(),
+      message: `Recording ${rec.data.date.slice(0, 16).replace('T', ' ')} · ${reps.length} reps · avg ${avg}%`,
+    });
+    flushQueue(upStatus);
+  } catch (e) {
+    console.warn('queue failed', e);
+    upStatus('Could not queue the upload (storage blocked?) — use Share or Download.', 'warn');
+  }
 }
 
 function saveSession(sess) {
@@ -774,6 +815,17 @@ function renderSettings() {
     form.appendChild(row);
   }
 }
+function renderGh() {
+  const gh = getGh();
+  $('ghRepo').value = gh.repo;
+  $('ghToken').value = gh.token;
+  $('ghAuto').checked = gh.auto;
+  $('ghNote').textContent = gh.token ? 'Token saved on this phone only.' : 'Not set up yet.';
+  $('ghNote').className = 'tiny';
+}
+function saveGhFromForm() {
+  setGh({ repo: $('ghRepo').value.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''), token: $('ghToken').value.trim(), auto: $('ghAuto').checked });
+}
 function saveSettingsFromForm() {
   const next = mergeSettings(settings);
   for (const el of $('settingsForm').querySelectorAll('[data-key]')) {
@@ -794,6 +846,7 @@ function saveSettingsFromForm() {
     if (th.warn < th.good) th.warn = th.good;
   }
   settings = next;
+  saveGhFromForm();
   const ok = store.set('sm.settings', settings);
   $('settingsNote').textContent = ok ? 'Saved ✓' : 'Could not save (storage blocked) — used for this visit only.';
 }
@@ -801,7 +854,7 @@ function saveSettingsFromForm() {
 // ---------------------------------------------------------------- wire up
 function wire() {
   $('btnStart').addEventListener('click', startSession);
-  $('btnSettings').addEventListener('click', () => { renderSettings(); $('settingsNote').textContent = ''; show('settings'); });
+  $('btnSettings').addEventListener('click', () => { renderSettings(); renderGh(); $('settingsNote').textContent = ''; show('settings'); });
   $('btnHelp').addEventListener('click', () => show('help'));
   $('btnLast').addEventListener('click', () => {
     const all = store.get('sm.sessions', []);
@@ -844,9 +897,31 @@ function wire() {
   $('fps').addEventListener('click', () => toggleDebug());
   $('btnRec').addEventListener('click', async () => {
     if (!S.lastRec) return;
-    const { blob, ext } = await S.lastRec.blob();
-    downloadBlob(`shadow-mirror-rec-${S.lastRec.data.date.slice(0, 16).replace(/[:T]/g, '-')}.${ext}`, blob);
+    const f = await recordingFile(S.lastRec);
+    downloadBlob(f.name, f.blob);
   });
+  $('btnShare').addEventListener('click', async () => {
+    if (!S.lastRec) return;
+    const f = await recordingFile(S.lastRec);
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [f.file] })) {
+        await navigator.share({ files: [f.file], title: 'Shadow Mirror recording' });
+        return;
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') return; // closed the share menu
+    }
+    downloadBlob(f.name, f.blob); // sharing files not supported → download instead
+  });
+  $('btnGhTest').addEventListener('click', async () => {
+    saveGhFromForm();
+    $('ghNote').textContent = 'Checking…';
+    const r = await testConnection();
+    $('ghNote').textContent = r.msg;
+    $('ghNote').className = 'tiny ' + (r.ok ? 'good' : 'warn');
+    if (r.ok) flushQueue(upStatus);
+  });
+  window.addEventListener('online', () => flushQueue(upStatus));
 
   $('btnSaveSettings').addEventListener('click', saveSettingsFromForm);
   $('btnResetSettings').addEventListener('click', () => {
@@ -859,6 +934,7 @@ function wire() {
 wire();
 renderHome();
 show('home');
+flushQueue(upStatus); // anything left from an offline session
 // Updates: the service worker installs a new version in the background. When it
 // takes over, offer a reload (never in the middle of a session).
 if ('serviceWorker' in navigator) {

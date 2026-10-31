@@ -178,6 +178,12 @@ textarea { width: 100%; background: var(--panel); color: var(--text); border: 1p
 /* settings */
 .srow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .srow span { flex: 1; }
+.srow input[type=text], .srow input[type=password] {
+  width: 190px; min-height: 44px; font: 15px/1.2 ui-monospace, monospace; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; padding: 0 10px;
+}
+.tiny.good, .up.good { color: var(--good); }
+.tiny.warn, .up.warn { color: var(--warn); }
 .srow input[type=number], .srow select {
   width: 150px; min-height: 44px; font: inherit; color: var(--text); background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; padding: 0 10px;
