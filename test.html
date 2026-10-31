@@ -99,6 +99,14 @@ function worldPose(ph, o) {
     const [x, y] = img(p); P[i] = { x, y, z: 0 };
   }
   P[0].z = noseZ; P[25].z = kneeZ; P[27].z = heelZ + 0.05; P[29].z = heelZ;
+  // front knee: ~170° in stance, bent to o.kneeAng (default 140°, inside the pro range) at landing
+  {
+    const theta = (lerp(170, o.kneeAng ?? 140, s) * Math.PI) / 180;
+    const Hh = P[23], A = P[27];
+    const half = Math.hypot(A.x - Hh.x, A.y - Hh.y, A.z - Hh.z) / 2;
+    P[25] = { x: (Hh.x + A.x) / 2, y: (Hh.y + A.y) / 2, z: (Hh.z + A.z) / 2 - half / Math.tan(theta / 2) };
+    P[0].z = P[25].z - (o.lean ?? 0.02) * BODY_M * s;
+  }
   // side-on stance: front (left) shoulder nearer the camera; o.square = chest turned to the camera
   P[11].z = o.square ? 0 : -0.16; P[12].z = o.square ? 0 : 0.16;
   if (o.square) { P[11].x = 0.18; P[12].x = -0.18; }
@@ -477,6 +485,19 @@ test('Stance check: drifted off the mark → hint, no "Ready"; back on the mark 
   const after = log.slice(i + 1);
   expect(after[0] && after[0].includes('starting mark') && after.includes('READY') && after.indexOf('READY') > 0, log.join(' → '));
   return log.join(' → ');
+});
+
+test('3D: front knee straight at the finish → amber at 160°, red at 172°; 140° green', () => {
+  const r = pipeOne({ toe: 10, kneeAng: 172 });
+  expect(r.length === 1, 'reps=' + r.length);
+  const k = r[0].metrics.frontKnee;
+  expect(k && k.g === 'bad' && Math.abs(k.v - 172) < 8, 'frontKnee=' + JSON.stringify(k));
+  expect(r[0].cue === 'Bend your front knee more', 'cue=' + r[0].cue);
+  const a = pipeOne({ toe: 10, kneeAng: 160 })[0].metrics.frontKnee;
+  expect(a && a.g === 'warn', '160° should be amber: ' + JSON.stringify(a));
+  const ok = pipeOne({ toe: 10, kneeAng: 140 })[0].metrics.frontKnee;
+  expect(ok && ok.g === 'good' && Math.abs(ok.v - 140) < 8, '140° should be green: ' + JSON.stringify(ok));
+  return `172° → ${k.v.toFixed(0)}° ${k.g} · 160° → ${a.v.toFixed(0)}° ${a.g} · 140° → ${ok.v.toFixed(0)}° ${ok.g} · cue: ${r[0].cue}`;
 });
 
 const rows = document.getElementById('rows');

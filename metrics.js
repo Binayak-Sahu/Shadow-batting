@@ -405,6 +405,7 @@ export class RepDetector {
 export const METRICS = [
   // Order = priority when choosing the ONE cue to show (coach's priorities).
   { id: 'toe', name: 'Front toe', unit: '°' },
+  { id: 'frontKnee', name: 'Front knee', unit: '°' },
   { id: 'stepWide', name: 'Step line', unit: 'H' },
   { id: 'headOverFoot', name: 'Head over foot', unit: 'H' },
   { id: 'kneeLift', name: 'Knee lift', unit: 'H' },
@@ -507,6 +508,35 @@ export function computeRepMetrics(rep, baseline, cfg) {
         : (g === 'warn' ? 'Slightly wide' : 'Wide') + (v >= 0 ? ' (off)' : ' (leg)');
       m.stepWide = { value: v, grade: g, label, dir: v >= 0 ? 'off' : 'leg' };
     } else m.stepWide = null;
+  }
+
+  // 2b) FRONT KNEE BEND at the finish (3D): hip → knee → ankle angle of the
+  //     front leg, from MediaPipe world landmarks (the only way from this
+  //     camera: seen from the front the leg points at the lens, so a 2D
+  //     angle reads ~straight whatever the knee does).
+  //     Green range = middle half of 64 professional forward defences
+  //     measured the same way (CricketShotQualityAI, MIT licence):
+  //     122–154°, median 143°. Above = front knee too straight / stiff.
+  {
+    const kr = th.frontKnee;
+    const ang = [];
+    for (const f of plant) {
+      const w = f.world, q = f.lm[F.KNEE];
+      if (!w || !q || q.v < vis) continue;
+      const a = w[F.HIP], b = w[F.KNEE], c = w[F.ANKLE];
+      const u = [a.x - b.x, a.y - b.y, a.z - b.z], v = [c.x - b.x, c.y - b.y, c.z - b.z];
+      const d = (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (Math.hypot(...u) * Math.hypot(...v));
+      ang.push((Math.acos(Math.max(-1, Math.min(1, d))) * 180) / Math.PI);
+    }
+    if (ang.length >= 2) {
+      ang.sort((x, y) => x - y);
+      const deg = ang[Math.floor(ang.length / 2)]; // median: robust to a few bad frames
+      const over = deg - kr.high, under = kr.low - deg;
+      const g = grade(Math.max(0, over, under), { good: 0, warn: kr.tol });
+      const straight = over > 0;
+      const label = g === 'good' ? 'Good knee bend' : straight ? (g === 'warn' ? 'Front knee a bit straight' : 'Front knee too straight') : 'Sitting too deep';
+      m.frontKnee = { value: deg, grade: g, label, dir: straight ? 'straight' : under > 0 ? 'deep' : 'ok' };
+    } else m.frontKnee = null;
   }
 
   // 3) KNEE LIFT: highest point of the front knee during the step vs stance.
@@ -612,6 +642,7 @@ const CUES = {
   toe: (x) => (x.dir === 'leg' ? 'Front toe turned in — open it a little' : 'Point your front toe more at the phone'),
   stepWide: (x) => (x.dir === 'off' ? 'Step straighter, towards the phone' : 'Don’t step across — step towards the phone'),
   headOverFoot: (x) => (x.dir === 'leg' ? 'Head falling away — keep it over your front knee' : 'Head too far over — keep it above your front knee'),
+  frontKnee: (x) => (x.dir === 'deep' ? 'Don’t sit so deep — firm front knee' : 'Bend your front knee more'),
   kneeLift: () => 'Smaller step — slide the foot, don’t lift the knee',
   headBob: () => 'Keep your head level as you step',
   baseWidth: () => 'Go back to the same stance width',

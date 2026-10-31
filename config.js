@@ -2,7 +2,7 @@
 // The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
 // so you normally tune from the app, not by editing this file.
 
-export const APP_VERSION = '1.5.0';
+export const APP_VERSION = '1.6.0';
 export const APP_BUILD = '__BUILD__'; // commit id, filled in by the GitHub Pages workflow
 
 // MediaPipe Tasks Vision, pinned to an exact version (not "latest").
@@ -78,6 +78,9 @@ export const DEFAULTS = {
   // Green if |value| <= good, amber if <= warn, red above.
   thresholds: {
     toeAngle:     { good: 25,   warn: 45 },   // deg, 0 = toe straight at the camera/bowler
+    // deg, front knee at the finish (3D). Green low–high = middle half of 64 pro
+    // forward defences (CricketShotQualityAI, MIT); amber within tol outside it.
+    frontKnee:    { low: 122, high: 154, tol: 12 },
     stepWide:     { good: 0.05, warn: 0.10 }, // H sideways to the LEG side vs stance
     stepWideOff:  { good: 0.09, warn: 0.15 }, // H sideways to the OFF side (a little across is normal)
     kneeLift:     { good: 0.05, warn: 0.10 }, // H the front knee rises
@@ -118,6 +121,9 @@ export const SETTINGS_FIELDS = [
   { group: 'Thresholds — green / amber limits' },
   { key: 'thresholds.toeAngle.good', label: 'Toe angle green ≤ (deg)', type: 'number', min: 5, max: 60, step: 1 },
   { key: 'thresholds.toeAngle.warn', label: 'Toe angle amber ≤ (deg)', type: 'number', min: 10, max: 80, step: 1 },
+  { key: 'thresholds.frontKnee.high', label: 'Front knee green up to (deg, straighter = higher)', type: 'number', min: 130, max: 180, step: 1 },
+  { key: 'thresholds.frontKnee.low', label: 'Front knee green from (deg)', type: 'number', min: 80, max: 150, step: 1 },
+  { key: 'thresholds.frontKnee.tol', label: 'Front knee amber margin (deg)', type: 'number', min: 2, max: 40, step: 1 },
   { key: 'thresholds.stepWide.good', label: 'Step to leg side green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
   { key: 'thresholds.stepWide.warn', label: 'Step to leg side amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
   { key: 'thresholds.stepWideOff.good', label: 'Step to off side green ≤ (H)', type: 'number', min: 0.01, max: 0.4, step: 0.005 },

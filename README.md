@@ -18,6 +18,7 @@ After that it works offline. In Chrome: ⋮ menu → **Add to Home screen** for 
 | Check | What it looks at | What it says when it's off |
 |---|---|---|
 | Front toe | direction of the front foot at landing, in 3D (0° = at the phone/bowler) | Point your front toe more at the phone |
+| Front knee *(3D, new)* | bend of the front knee (hip–knee–ankle) at the finish; green = middle half of 64 professional forward defences (122–154°) | Bend your front knee more |
 | Step line | front ankle sideways vs back ankle, landing vs stance | Step straighter, towards the phone |
 | Head over foot | head sideways vs front knee/ankle at the finish (more room to the off side) | Head falling away / too far over — keep it over your front knee |
 | Knee lift | how high the front knee rises during the step | Smaller step — slide the foot, don't lift the knee |
@@ -105,3 +106,15 @@ on the home screen. No manual version bump needed.
 - `lab.html` — re-run a recording. `test.html` — self-test on synthetic reps.
 - `tests/run-selftest.cjs` — runs `test.html` headless (used by the deploy workflow).
 - `sw.js` — offline cache. `manifest.json` + icons — installable app.
+
+## Credits
+
+- Front-knee range (122–154°, median 143°) and the method of measuring joint angles from
+  MediaPipe's 3D world landmarks for a camera behind the bowler come from
+  [CricketShotQualityAI](https://github.com/vipulpandey21/CricketShotQualityAI)
+  (V. Pandey, A. Verma, S. Raj — ABV-IIITM Gwalior; MIT licence; built on
+  RITIK-12/CricketShotClassification, MIT). Their professional data also shows a ~19° body
+  lean towards the off side in a forward defence, which is why "head to the off side"
+  gets more room here than "head to the leg side".
+- Pose tracking: Google MediaPipe Pose Landmarker (Apache 2.0).
+

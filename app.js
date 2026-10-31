@@ -693,7 +693,7 @@ function onRep(rep, res, frame) {
 function metricText(id, m) {
   if (!m) return '—';
   const cm = (v) => `${Math.round(Math.abs(v) * settings.heightCm)} cm`;
-  if (id === 'toe') return `${Math.round(m.value)}°`;
+  if (id === 'toe' || id === 'frontKnee') return `${Math.round(m.value)}°`;
   if (id === 'headForward') return `${cm(m.value)} ${m.value >= 0 ? 'ahead' : 'back'}`;
   return cm(m.value);
 }
