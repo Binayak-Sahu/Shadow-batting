@@ -1,0 +1,139 @@
+// config.js — every number you might want to tune lives here.
+// The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
+// so you normally tune from the app, not by editing this file.
+
+export const APP_VERSION = '1.0.0';
+
+// MediaPipe Tasks Vision, pinned to an exact version (not "latest").
+// If you ever change this, change MP_VERSION in sw.js too.
+export const MP_VERSION = '0.10.14';
+export const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
+export const MP_BUNDLE_URL = `${MP_BASE}/vision_bundle.mjs`;
+export const MP_WASM_URL = `${MP_BASE}/wasm`;
+
+export const MODEL_URLS = {
+  lite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+};
+
+// Shots shown on the home screen. Only "ffd" is built for now.
+export const SHOTS = [
+  { id: 'ffd', name: 'Front-foot defence', ready: true },
+  { id: 'bfd', name: 'Back-foot defence', ready: false },
+  { id: 'drive', name: 'Straight drive', ready: false },
+  { id: 'leave', name: 'Leave', ready: false },
+];
+
+// Units used below:
+//   "H"  = your body height in the image (measured at calibration and
+//          re-measured just before every rep). 0.05 H ≈ 9 cm for a 183 cm person.
+//   deg  = degrees.
+export const DEFAULTS = {
+  handedness: 'right',      // 'right' or 'left' — the FRONT foot is the left foot for a right-hander
+  heightCm: 183,            // only used to show values in cm
+  model: 'full',            // 'full' (more accurate feet) or 'lite' (faster)
+  targetReps: 30,
+  beep: true,
+  voice: false,
+  replay: true,
+  replaySpeed: 0.4,         // 0.4 = 40% speed slow motion
+  cardSeconds: 3,           // result card time when replay is off
+  camHeightM: 1.0,          // phone lens height above the roof
+  camDistM: 3.5,            // phone distance from your front foot
+  visibilityMin: 0.5,       // MediaPipe visibility score needed to trust a point
+
+  // One-Euro smoothing (see pose.js). Lower minCutoff = smoother but more lag.
+  smoothing: { minCutoff: 1.5, beta: 4.0, dCutoff: 1.0 },
+
+  // Automatic rep detection (see RepDetector in metrics.js). Speeds are in H per second.
+  rep: {
+    speedWindow: 0.12,   // s — speed is measured over this time window
+    stillSpeed: 0.10,    // below this the front foot counts as still
+    startSpeed: 0.18,    // front foot faster than this = step has started
+    startDisp: 0.025,    // H — and has moved at least this far from stance
+    minStep: 0.04,       // H — a real step moves the foot at least this far
+    minForward: 0.02,    // H — the foot must end closer to the camera (lower in the image)
+    settleFrames: 3,     // frames of a still foot = landed
+    finishDelay: 0.4,    // s after landing = "finish" (hold position)
+    maxStepTime: 1.6,    // s — slower than this is not a step
+    preWindow: 0.5,      // s of stance before the step used as the reference
+    stillTime: 0.4,      // s still in stance to arm the next rep
+    returnDist: 0.06,    // H — "back in stance" means within this distance of the old stance
+    rearmLongStill: 2.5, // s — if you never go back to stance, re-arm after this long still
+  },
+
+  // Green if |value| <= good, amber if <= warn, red above.
+  thresholds: {
+    toeAngle:     { good: 25,   warn: 45 },   // deg, 0 = toe straight at the camera/bowler
+    stepWide:     { good: 0.05, warn: 0.10 }, // H sideways vs stance
+    kneeLift:     { good: 0.05, warn: 0.10 }, // H the front knee rises
+    headBob:      { good: 0.025, warn: 0.045 },// H up-and-down of the nose during the step
+    headOverFoot: { good: 0.05, warn: 0.09 }, // H sideways gap nose ↔ front knee/ankle at finish
+    baseWidth:    { good: 0.15, warn: 0.30 }, // fraction change of stance width vs calibration
+  },
+};
+
+// Fields shown on the Settings screen. key = path inside the settings object.
+export const SETTINGS_FIELDS = [
+  { group: 'You' },
+  { key: 'handedness', label: 'Batting hand', type: 'select', options: [['right', 'Right-handed'], ['left', 'Left-handed']] },
+  { key: 'heightCm', label: 'Your height (cm)', type: 'number', min: 120, max: 220, step: 1 },
+  { group: 'Session' },
+  { key: 'targetReps', label: 'Target reps', type: 'number', min: 5, max: 200, step: 1 },
+  { key: 'beep', label: 'Beep after each rep', type: 'toggle' },
+  { key: 'voice', label: 'Speak the cue (voice)', type: 'toggle' },
+  { key: 'replay', label: 'Slow-motion replay', type: 'toggle' },
+  { key: 'replaySpeed', label: 'Replay speed (0.2–1)', type: 'number', min: 0.2, max: 1, step: 0.05 },
+  { key: 'cardSeconds', label: 'Result card seconds (replay off)', type: 'number', min: 1, max: 10, step: 0.5 },
+  { group: 'Camera & model' },
+  { key: 'model', label: 'Pose model', type: 'select', options: [['full', 'Full (accurate)'], ['lite', 'Lite (faster)']] },
+  { key: 'camHeightM', label: 'Phone height (m)', type: 'number', min: 0.3, max: 2, step: 0.05 },
+  { key: 'camDistM', label: 'Phone distance (m)', type: 'number', min: 1.5, max: 6, step: 0.1 },
+  { key: 'visibilityMin', label: 'Min visibility (0–1)', type: 'number', min: 0.1, max: 0.95, step: 0.05 },
+  { group: 'Thresholds — green / amber limits' },
+  { key: 'thresholds.toeAngle.good', label: 'Toe angle green ≤ (deg)', type: 'number', min: 5, max: 60, step: 1 },
+  { key: 'thresholds.toeAngle.warn', label: 'Toe angle amber ≤ (deg)', type: 'number', min: 10, max: 80, step: 1 },
+  { key: 'thresholds.stepWide.good', label: 'Step wide green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.stepWide.warn', label: 'Step wide amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
+  { key: 'thresholds.kneeLift.good', label: 'Knee lift green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.kneeLift.warn', label: 'Knee lift amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
+  { key: 'thresholds.headBob.good', label: 'Head bob green ≤ (H)', type: 'number', min: 0.005, max: 0.2, step: 0.005 },
+  { key: 'thresholds.headBob.warn', label: 'Head bob amber ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.headOverFoot.good', label: 'Head-over-foot green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.headOverFoot.warn', label: 'Head-over-foot amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
+  { key: 'thresholds.baseWidth.good', label: 'Base change green ≤ (fraction)', type: 'number', min: 0.02, max: 1, step: 0.01 },
+  { key: 'thresholds.baseWidth.warn', label: 'Base change amber ≤ (fraction)', type: 'number', min: 0.05, max: 1.5, step: 0.01 },
+  { group: 'Rep detection (advanced)' },
+  { key: 'rep.startSpeed', label: 'Step start speed (H/s)', type: 'number', min: 0.05, max: 1, step: 0.01 },
+  { key: 'rep.stillSpeed', label: 'Still speed (H/s)', type: 'number', min: 0.02, max: 0.5, step: 0.01 },
+  { key: 'rep.minStep', label: 'Minimum step (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'rep.finishDelay', label: 'Finish after landing (s)', type: 'number', min: 0.1, max: 1.5, step: 0.05 },
+  { key: 'smoothing.minCutoff', label: 'Smoothing (lower = smoother)', type: 'number', min: 0.2, max: 5, step: 0.1 },
+];
+
+// Deep copy + merge helpers used by app.js and test.html.
+export function cloneDefaults() {
+  return JSON.parse(JSON.stringify(DEFAULTS));
+}
+export function mergeSettings(saved) {
+  const out = cloneDefaults();
+  const walk = (dst, src) => {
+    if (!src || typeof src !== 'object') return;
+    for (const k of Object.keys(dst)) {
+      if (!(k in src)) continue;
+      if (dst[k] && typeof dst[k] === 'object') walk(dst[k], src[k]);
+      else if (typeof src[k] === typeof dst[k]) dst[k] = src[k];
+    }
+  };
+  walk(out, saved);
+  return out;
+}
+export function getPath(obj, path) {
+  return path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
+}
+export function setPath(obj, path, value) {
+  const keys = path.split('.');
+  const last = keys.pop();
+  const target = keys.reduce((o, k) => o[k], obj);
+  target[last] = value;
+}

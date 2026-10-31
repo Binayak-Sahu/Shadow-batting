@@ -1,26 +1,14 @@
 {
-  "name": "Shadow Batting",
-  "short_name": "Shadow",
-  "description": "Technique repetition trainer for shadow batting",
-  "start_url": "./",
+  "name": "Shadow Mirror",
+  "short_name": "Shadow Mirror",
+  "description": "Live pose feedback for shadow batting. Video stays on your phone.",
+  "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0a0e14",
-  "theme_color": "#0a0e14",
-  "categories": ["sports", "fitness"],
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
   "icons": [
-    {
-      "src": "./icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "./icon-maskable.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
-    }
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }

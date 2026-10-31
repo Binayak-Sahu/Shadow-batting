@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow Mirror — metric tests</title>
+<style>
+  body { font: 16px/1.4 system-ui, sans-serif; background: #0b0d10; color: #eef; margin: 0; padding: 16px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  #sum { font-size: 22px; font-weight: 700; margin: 10px 0 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td, th { border-bottom: 1px solid #2a2f38; padding: 6px 4px; text-align: left; vertical-align: top; }
+  .pass { color: #5be37a; font-weight: 700; }
+  .fail { color: #ff5a5a; font-weight: 700; }
+  code { color: #9fd3ff; }
+  a { color: #9fd3ff; }
+</style>
+</head>
+<body>
+<h1>Metric tests (synthetic reps)</h1>
+<p>Runs <code>metrics.js</code> on fake landmark sequences with camera noise + smoothing. <a href="./">Back to app</a></p>
+<div id="sum">Running…</div>
+<table><thead><tr><th>Test</th><th>Result</th><th>Details</th></tr></thead><tbody id="rows"></tbody></table>
+
+<script type="module">
+import { cloneDefaults } from './config.js';
+import { LandmarkSmoother, LM } from './pose.js';
+import { RepDetector, computeBaseline, computeRepMetrics, summarizeSession } from './metrics.js';
+
+const W = 480, H_IMG = 640, FPS = 30;
+const cfg = cloneDefaults();
+const K = cfg.camHeightM / cfg.camDistM;
+
+// seeded random so results are repeatable
+let seed = 7;
+const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+const smooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+// Right-hander stance in the RAW camera image: off side is image −x.
+const OFF = -1;
+const STANCE = {
+  nose: [250, 130], lsh: [245, 200], rsh: [256, 205], lhip: [245, 330], rhip: [256, 335],
+  lknee: [240, 430], rknee: [258, 415], lank: [238, 520], rank: [260, 495],
+};
+const FOOT_L = 38;  // foot length in px (sideways scale)
+const HEIGHT = ((525 + 499) / 2 - 130) / 0.88; // matches metrics.js body-height formula
+
+/** one pose; ph = step progress 0..1; opts = fault sizes (in H or degrees) */
+function pose(ph, o, visKill = false) {
+  const s = smooth(ph), bump = Math.sin(Math.PI * Math.max(0, Math.min(1, ph)));
+  const fwd = 40 * s;                          // px towards camera (down the image)
+  const lat = (o.lat || 0) * HEIGHT * OFF * s; // sideways (+lat = off side)
+  const liftAnk = (0.03 + 0.6 * (o.knee || 0.02)) * HEIGHT * bump;
+  const liftKnee = (o.knee || 0.02) * HEIGHT * bump;
+  const lank = [STANCE.lank[0] + lat, STANCE.lank[1] + fwd - liftAnk];
+  const lknee = [STANCE.lknee[0] + lat * 0.9, STANCE.lknee[1] + fwd * 0.5 - liftKnee];
+  // foot angle: 90° (stance, toe to off) → o.toe at landing
+  const phi = (lerp(90, o.toe ?? 10, s) * Math.PI) / 180;
+  const fdx = Math.sin(phi) * FOOT_L * OFF, fdy = Math.cos(phi) * FOOT_L * K;
+  const lheel = [lank[0] - fdx * 0.37, lank[1] + 5 - fdy * 0.37];
+  const ltoe = [lheel[0] + fdx, lheel[1] + fdy];
+  const footMid = (lknee[0] + lank[0]) / 2;
+  const noseX0 = STANCE.nose[0];
+  const noseX1 = footMid + (o.head ?? 0.0) * HEIGHT * OFF;
+  const nose = [lerp(noseX0, noseX1, s), STANCE.nose[1] + 10 * s - (o.bob || 0) * HEIGHT * bump];
+  const shift = nose[0] - noseX0;
+  const P = {
+    0: nose, 11: [STANCE.lsh[0] + shift * 0.8, STANCE.lsh[1] + 8 * s], 12: [STANCE.rsh[0] + shift * 0.8, STANCE.rsh[1] + 8 * s],
+    23: [STANCE.lhip[0] + shift * 0.5, STANCE.lhip[1] + 10 * s], 24: [STANCE.rhip[0] + shift * 0.5, STANCE.rhip[1] + 8 * s],
+    25: lknee, 26: STANCE.rknee, 27: lank, 28: STANCE.rank,
+    29: lheel, 30: [274, 499], 31: ltoe, 32: [236, 502],
+  };
+  const out = [];
+  for (let i = 0; i < 33; i++) {
+    const p = P[i] || [nose[0] + ((i % 5) - 2) * 6, nose[1] + 20 + i];
+    out.push({ x: (p[0] + gauss() * 1.5) / W, y: (p[1] + gauss() * 1.5) / H_IMG, visibility: visKill && i >= 25 ? 0.1 : 0.95 });
+  }
+  return out;
+}
+
+/** timeline = list of segments [{type:'still'|'step'|'back', dur, opts}] */
+function makeFrames(timeline, killAt = null) {
+  const frames = [];
+  let t = 0, ph = 0, opts = {};
+  const sm = new LandmarkSmoother(cfg.smoothing);
+  for (const seg of timeline) {
+    if (seg.opts) opts = seg.opts;
+    const n = Math.round(seg.dur * FPS);
+    for (let i = 0; i < n; i++) {
+      if (seg.type === 'step') ph = (i + 1) / n;
+      if (seg.type === 'back') ph = 1 - (i + 1) / n;
+      const kill = killAt && t >= killAt[0] && t < killAt[1];
+      const raw = pose(ph, opts, kill);
+      const lm = sm.apply(raw, t, W, H_IMG);
+      const ok = [0, 23, 24, 25, 27, 29, 31].every((k) => lm[k].v >= cfg.visibilityMin);
+      frames.push({ t, lm, ok, w: W, h: H_IMG });
+      t += 1 / FPS;
+    }
+  }
+  return frames;
+}
+
+function run(timeline, killAt) {
+  const frames = makeFrames(timeline, killAt);
+  const calib = frames.filter((f) => f.t < 0.9);
+  const base = computeBaseline(calib, cfg);
+  const det = new RepDetector(cfg, base.heightPx);
+  const reps = [], events = [];
+  for (const f of frames) {
+    const e = det.update(f);
+    if (!e) continue;
+    events.push(e.type + (e.reason ? ':' + e.reason : ''));
+    if (e.type === 'rep') reps.push(computeRepMetrics(e.rep, base, cfg));
+  }
+  return { base, reps, events };
+}
+
+const oneRep = (opts) => [
+  { type: 'still', dur: 1.2, opts }, { type: 'step', dur: 0.45 }, { type: 'still', dur: 1.0 },
+  { type: 'back', dur: 0.45 }, { type: 'still', dur: 1.0 },
+];
+
+const fmt = (m) => Object.entries(m).map(([k, v]) => v ? `${k}=${v.value.toFixed(k === 'toe' ? 0 : 3)}(${v.grade})` : `${k}=—`).join(' ');
+
+const tests = [];
+function test(name, fn) { tests.push({ name, fn }); }
+function expect(cond, msg) { if (!cond) throw new Error(msg); }
+
+test('Calibration finds off side (right-hander, image −x)', () => {
+  const { base } = run(oneRep({}));
+  expect(base.offSign === -1 && base.offSource === 'feet', `offSign=${base.offSign} (${base.offSource})`);
+  return `H=${base.heightPx.toFixed(0)}px, off side on screen ${base.offScreenSide}`;
+});
+
+test('Good rep → 1 rep, all green', () => {
+  const { reps, events } = run(oneRep({ toe: 10, lat: 0.01, knee: 0.02, bob: 0.005, head: 0.0 }));
+  expect(reps.length === 1, `reps=${reps.length} events=${events}`);
+  const r = reps[0];
+  const bad = Object.entries(r.metrics).filter(([, v]) => v && v.grade !== 'good');
+  expect(!bad.length, 'not green: ' + fmt(r.metrics));
+  expect(r.cue === 'Good rep!', 'cue=' + r.cue);
+  return fmt(r.metrics);
+});
+
+test('Toe to cover (65°) → toe RED, cue "Toe to mid-off"', () => {
+  const { reps } = run(oneRep({ toe: 65, lat: 0.01, knee: 0.02, bob: 0.005 }));
+  expect(reps.length === 1, 'reps=' + reps.length);
+  const r = reps[0];
+  expect(r.metrics.toe.grade === 'bad', fmt(r.metrics));
+  expect(Math.abs(r.metrics.toe.value - 65) < 10, 'angle off by >10°: ' + r.metrics.toe.value.toFixed(1));
+  expect(r.cue === 'Toe to mid-off', 'cue=' + r.cue);
+  return fmt(r.metrics) + ' → ' + r.cue;
+});
+
+test('Slightly open toe (35°) → toe AMBER', () => {
+  const { reps } = run(oneRep({ toe: 35 }));
+  expect(reps.length === 1, 'reps=' + reps.length);
+  expect(reps[0].metrics.toe.grade === 'warn', fmt(reps[0].metrics));
+  return fmt(reps[0].metrics);
+});
+
+test('Wide step (0.15 H to off) → step RED', () => {
+  const { reps } = run(oneRep({ toe: 10, lat: 0.15, head: 0 }));
+  expect(reps.length === 1, 'reps=' + reps.length);
+  const r = reps[0];
+  expect(r.metrics.stepWide.grade === 'bad' && r.metrics.stepWide.dir === 'off', fmt(r.metrics));
+  expect(r.cue === 'Step straight, not wide', 'cue=' + r.cue);
+  return fmt(r.metrics) + ' → ' + r.cue;
+});
+
+test('High stamp (knee 0.15 H, head bob 0.06 H) → knee + bob RED', () => {
+  const { reps } = run(oneRep({ toe: 10, knee: 0.15, bob: 0.06 }));
+  expect(reps.length === 1, 'reps=' + reps.length);
+  const r = reps[0];
+  expect(r.metrics.kneeLift.grade === 'bad', fmt(r.metrics));
+  expect(r.metrics.headBob.grade === 'bad', fmt(r.metrics));
+  expect(r.cue === 'Smaller step, slide it', 'cue=' + r.cue);
+  return fmt(r.metrics) + ' → ' + r.cue;
+});
+
+test('Head falls to leg side (0.13 H) → head RED', () => {
+  const { reps } = run(oneRep({ toe: 10, head: -0.13 }));
+  expect(reps.length === 1, 'reps=' + reps.length);
+  const r = reps[0];
+  expect(r.metrics.headOverFoot.grade === 'bad' && r.metrics.headOverFoot.dir === 'leg', fmt(r.metrics));
+  expect(r.cue === 'Head to the ball', 'cue=' + r.cue);
+  return fmt(r.metrics) + ' → ' + r.cue;
+});
+
+test('Standing still 4 s → 0 reps', () => {
+  const { reps } = run([{ type: 'still', dur: 4, opts: {} }]);
+  expect(reps.length === 0, 'reps=' + reps.length);
+  return '0 reps';
+});
+
+test('Three reps in a row → 3 reps', () => {
+  const tl = [...oneRep({ toe: 10 }), ...oneRep({ toe: 60 }), ...oneRep({ toe: 10, lat: 0.15 })];
+  const { reps, events } = run(tl);
+  expect(reps.length === 3, `reps=${reps.length} events=${events}`);
+  const s = summarizeSession(reps.map((r) => ({ ...r })));
+  return `scores ${reps.map((r) => r.score).join(', ')} · session avg ${s.avgScore}`;
+});
+
+test('Feet hidden mid-step → rep aborted, not counted', () => {
+  const { reps, events } = run(oneRep({ toe: 10 }), [1.35, 1.6]);
+  expect(reps.length === 0, `reps=${reps.length} events=${events}`);
+  expect(events.some((e) => e.startsWith('abort')), 'no abort: ' + events);
+  return events.join(' → ');
+});
+
+const rows = document.getElementById('rows');
+let pass = 0;
+for (const t of tests) {
+  let ok = true, detail = '';
+  try { detail = t.fn() || ''; } catch (e) { ok = false; detail = e.message; console.error(t.name, e); }
+  if (ok) pass++;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${t.name}</td><td class="${ok ? 'pass' : 'fail'}">${ok ? '✔ PASS' : '✘ FAIL'}</td><td><code></code></td>`;
+  tr.querySelector('code').textContent = detail;
+  rows.appendChild(tr);
+}
+const sum = document.getElementById('sum');
+sum.textContent = `${pass} / ${tests.length} passed`;
+sum.className = pass === tests.length ? 'pass' : 'fail';
+document.title = `${pass === tests.length ? 'PASS' : 'FAIL'} ${pass}/${tests.length}`;
+</script>
+</body>
+</html>
