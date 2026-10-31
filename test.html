@@ -26,7 +26,7 @@
 import { cloneDefaults } from './config.js';
 import { LandmarkSmoother, LM } from './pose.js';
 import { RepDetector, computeBaseline, computeRepMetrics, summarizeSession, METRICS } from './metrics.js';
-import { Pipeline, Recorder, runRecording, quantizeRaw, quantizeTime, compactResult } from './pipeline.js';
+import { Pipeline, Recorder, runRecording, quantizeRaw, quantizeWorld, quantizeTime, compactResult } from './pipeline.js';
 
 const W = 480, H_IMG = 640, FPS = 30;
 const cfg = cloneDefaults();
@@ -77,6 +77,33 @@ function pose(ph, o, visKill = false) {
   for (let i = 0; i < 33; i++) {
     const p = P[i] || [nose[0] + ((i % 5) - 2) * 6, nose[1] + 20 + i];
     out.push({ x: (p[0] + gauss() * 1.5) / W, y: (p[1] + gauss() * 1.5) / H_IMG, visibility: visKill && i >= 25 ? 0.1 : 0.95 });
+  }
+  return out;
+}
+
+/**
+ * MediaPipe-style WORLD landmarks (metres, origin between the hips, y down,
+ * smaller z = closer to the camera) for the same pose. Front foot turns from
+ * 90° (stance, toe to the off side) to o.toe; head ends o.lean H ahead of the knee.
+ */
+const BODY_M = 1.75;
+function worldPose(ph, o) {
+  const s = smooth(ph);
+  const img = (p) => [((p[0] - 250) / HEIGHT) * BODY_M, ((p[1] - 330) / HEIGHT) * BODY_M];
+  const phi = (lerp(90, o.toe ?? 10, s) * Math.PI) / 180;
+  const heelZ = -0.30 * s, kneeZ = -0.22 * s;
+  const noseZ = kneeZ - (o.lean ?? 0.02) * BODY_M * s;
+  const P = {};
+  for (const [i, p] of Object.entries({ 0: STANCE.nose, 11: STANCE.lsh, 12: STANCE.rsh, 23: STANCE.lhip, 24: STANCE.rhip,
+    25: STANCE.lknee, 26: STANCE.rknee, 27: STANCE.lank, 28: STANCE.rank, 29: [STANCE.lank[0], 525], 30: [274, 499], 31: [STANCE.lank[0] - 38, 522], 32: [236, 502] })) {
+    const [x, y] = img(p); P[i] = { x, y, z: 0 };
+  }
+  P[0].z = noseZ; P[25].z = kneeZ; P[27].z = heelZ + 0.05; P[29].z = heelZ;
+  P[31] = { x: P[29].x + Math.sin(phi) * 0.25 * OFF, y: P[29].y, z: heelZ - Math.cos(phi) * 0.25 };
+  const out = [];
+  for (let i = 0; i < 33; i++) {
+    const p = P[i] || { x: 0, y: -0.5, z: 0 };
+    out.push({ x: p.x + gauss() * 0.005, y: p.y + gauss() * 0.005, z: p.z + gauss() * 0.01 });
   }
   return out;
 }
@@ -219,6 +246,7 @@ const MIRROR = { 1: 4, 2: 5, 3: 6, 7: 8, 9: 10, 11: 12, 13: 14, 15: 16, 17: 18, 
 for (const [a, b] of Object.entries(MIRROR)) MIRROR[b] = +a;
 /** A left-hander is the mirror image of a right-hander: swap left/right points and flip x. */
 const mirrorRaw = (raw) => raw.map((_, i) => { const p = raw[MIRROR[i] ?? i]; return { ...p, x: 1 - p.x }; });
+const mirrorWorld = (w) => w.map((_, i) => { const p = w[MIRROR[i] ?? i]; return { ...p, x: -p.x }; });
 
 /** Raw (unsmoothed) frames for a timeline, like MediaPipe would give. */
 function rawFrames(timeline) {
@@ -230,7 +258,7 @@ function rawFrames(timeline) {
     for (let i = 0; i < n; i++) {
       if (seg.type === 'step') ph = (i + 1) / n;
       if (seg.type === 'back') ph = 1 - (i + 1) / n;
-      out.push({ t: quantizeTime(t), raw: quantizeRaw(pose(ph, opts)) });
+      out.push({ t: quantizeTime(t), raw: quantizeRaw(pose(ph, opts)), world: quantizeWorld(worldPose(ph, opts)) });
       t += 1 / FPS;
     }
   }
@@ -241,8 +269,8 @@ function runPipeline(frames, settings, rec = null) {
   const res = [];
   let calibrated = null;
   for (const f of frames) {
-    if (rec) rec.frame(f.raw, null, f.t, W, H_IMG);
-    const o = p.push(f.raw, null, f.t, W, H_IMG);
+    if (rec) rec.frame(f.raw, f.world, f.t, W, H_IMG);
+    const o = p.push(f.raw, f.world, f.t, W, H_IMG);
     if (o.calibrated) calibrated = o.calibrated;
     if (o.result) { const c = compactResult(o.result, IDS); res.push({ t: f.t, ...c }); if (rec) rec.result(f.t, c); }
   }
@@ -273,7 +301,7 @@ test('Left-hander (mirror image) → same results as right-hander', () => {
   const frames = rawFrames(SESSION);
   const right = runPipeline(frames, cfg);
   const lcfg = cloneDefaults(); lcfg.handedness = 'left';
-  const left = runPipeline(frames.map((f) => ({ t: f.t, raw: mirrorRaw(f.raw) })), lcfg);
+  const left = runPipeline(frames.map((f) => ({ t: f.t, raw: mirrorRaw(f.raw), world: mirrorWorld(f.world) })), lcfg);
   expect(left.calibrated && left.calibrated.offSign === 1 && left.calibrated.offSource === 'feet', 'left offSign=' + (left.calibrated && left.calibrated.offSign));
   expect(left.res.length === right.res.length, `reps L=${left.res.length} R=${right.res.length}`);
   for (let i = 0; i < right.res.length; i++) {
@@ -284,6 +312,43 @@ test('Left-hander (mirror image) → same results as right-hander', () => {
     }
   }
   return `scores R ${right.res.map((r) => r.score).join(', ')} · L ${left.res.map((r) => r.score).join(', ')} · cues: ${left.res.map((r) => r.cue).join(' / ')}`;
+});
+
+const pipeOne = (opts, settings = cfg) => { seed = 21; return runPipeline(rawFrames([{ type: 'still', dur: 2.6, opts: {} }, ...oneRep(opts)]), settings).res; };
+const fmtc = (m) => Object.entries(m).map(([k, v]) => v ? `${k}=${(+v.v).toFixed(k === 'toe' ? 0 : 3)}(${v.g})` : `${k}=—`).join(' ');
+
+test('3D: good rep → all green incl. head forward', () => {
+  const r = pipeOne({ toe: 10, lean: 0.02 });
+  expect(r.length === 1, 'reps=' + r.length);
+  const bad = Object.entries(r[0].metrics).filter(([, v]) => v && v.g !== 'good');
+  expect(!bad.length, 'not green: ' + fmtc(r[0].metrics));
+  expect(r[0].metrics.headForward, 'headForward not measured');
+  return fmtc(r[0].metrics);
+});
+
+test('3D: toe 65° from world landmarks (no camera numbers) → RED', () => {
+  const c = cloneDefaults(); c.camHeightM = 1.9; c.camDistM = 2.0; // wrong 2D numbers must not matter in 3D
+  const r = pipeOne({ toe: 65 }, c);
+  expect(r.length === 1, 'reps=' + r.length);
+  const t = r[0].metrics.toe;
+  expect(t.g === 'bad' && Math.abs(t.v - 65) < 8, `toe=${t.v} ${t.g}`);
+  return `toe ${t.v.toFixed(1)}° (3D) · cue ${r[0].cue}`;
+});
+
+test('3D: head 0.10 H behind front knee → head forward RED', () => {
+  const r = pipeOne({ toe: 10, lean: -0.10 });
+  expect(r.length === 1, 'reps=' + r.length);
+  const h = r[0].metrics.headForward;
+  expect(h && h.g === 'bad' && h.v < -0.07, 'headForward=' + JSON.stringify(h));
+  expect(r[0].cue === 'Lean in, head over front knee', 'cue=' + r[0].cue);
+  return fmtc(r[0].metrics) + ' → ' + r[0].cue;
+});
+
+test('2D toe method still works when chosen', () => {
+  const c = cloneDefaults(); c.toeMethod = '2d';
+  const r = pipeOne({ toe: 65 }, c);
+  expect(r.length === 1 && r[0].metrics.toe.g === 'bad', 'toe=' + JSON.stringify(r[0] && r[0].metrics.toe));
+  return `toe ${r[0].metrics.toe.v.toFixed(1)}° (2D)`;
 });
 
 const rows = document.getElementById('rows');

@@ -44,8 +44,9 @@ export const DEFAULTS = {
   debug: false,             // start with the debug numbers shown (or tap the fps line)
   replaySpeed: 0.4,         // 0.4 = 40% speed slow motion
   cardSeconds: 3,           // result card time when replay is off
-  camHeightM: 1.0,          // phone lens height above the roof
-  camDistM: 3.5,            // phone distance from your front foot
+  toeMethod: '3d',          // '3d' = MediaPipe world landmarks (no camera numbers needed), '2d' = flat picture
+  camHeightM: 1.0,          // 2D method only: phone lens height above the floor
+  camDistM: 3.5,            // 2D method only: phone distance from your front foot
   visibilityMin: 0.5,       // MediaPipe visibility score needed to trust a point
 
   // One-Euro smoothing (see pose.js). Lower minCutoff = smoother but more lag.
@@ -76,6 +77,7 @@ export const DEFAULTS = {
     headBob:      { good: 0.025, warn: 0.045 },// H up-and-down of the nose during the step
     headOverFoot: { good: 0.05, warn: 0.09 }, // H sideways gap nose ↔ front knee/ankle at finish
     baseWidth:    { good: 0.15, warn: 0.30 }, // fraction change of stance width vs calibration
+    headForward:  { good: 0.03, warn: 0.07 }, // H the head is BEHIND the front knee at finish (3D)
   },
 };
 
@@ -96,8 +98,9 @@ export const SETTINGS_FIELDS = [
   { group: 'Camera & model' },
   { key: 'model', label: 'Pose model', type: 'select', options: [['heavy', 'Heavy (most accurate)'], ['full', 'Full (balanced)'], ['lite', 'Lite (fastest)']] },
   { key: 'autoFallback', label: 'Auto-switch Heavy → Full if slow', type: 'toggle' },
-  { key: 'camHeightM', label: 'Phone height (m)', type: 'number', min: 0.3, max: 2, step: 0.05 },
-  { key: 'camDistM', label: 'Phone distance (m)', type: 'number', min: 1.5, max: 6, step: 0.1 },
+  { key: 'toeMethod', label: 'Toe angle method', type: 'select', options: [['3d', '3D (recommended)'], ['2d', '2D flat picture']] },
+  { key: 'camHeightM', label: 'Phone height (m) — 2D method only', type: 'number', min: 0.3, max: 2, step: 0.05 },
+  { key: 'camDistM', label: 'Phone distance (m) — 2D method only', type: 'number', min: 1.5, max: 6, step: 0.1 },
   { key: 'visibilityMin', label: 'Min visibility (0–1)', type: 'number', min: 0.1, max: 0.95, step: 0.05 },
   { group: 'Thresholds — green / amber limits' },
   { key: 'thresholds.toeAngle.good', label: 'Toe angle green ≤ (deg)', type: 'number', min: 5, max: 60, step: 1 },
@@ -112,6 +115,8 @@ export const SETTINGS_FIELDS = [
   { key: 'thresholds.headOverFoot.warn', label: 'Head-over-foot amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
   { key: 'thresholds.baseWidth.good', label: 'Base change green ≤ (fraction)', type: 'number', min: 0.02, max: 1, step: 0.01 },
   { key: 'thresholds.baseWidth.warn', label: 'Base change amber ≤ (fraction)', type: 'number', min: 0.05, max: 1.5, step: 0.01 },
+  { key: 'thresholds.headForward.good', label: 'Head behind knee green ≤ (H)', type: 'number', min: 0.005, max: 0.3, step: 0.005 },
+  { key: 'thresholds.headForward.warn', label: 'Head behind knee amber ≤ (H)', type: 'number', min: 0.01, max: 0.4, step: 0.005 },
   { group: 'Rep detection (advanced)' },
   { key: 'rep.startSpeed', label: 'Step start speed (H/s)', type: 'number', min: 0.05, max: 1, step: 0.01 },
   { key: 'rep.stillSpeed', label: 'Still speed (H/s)', type: 'number', min: 0.02, max: 0.5, step: 0.01 },

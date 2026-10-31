@@ -522,6 +522,7 @@ function metricText(id, m) {
   const cm = (v) => `${Math.round(Math.abs(v) * settings.heightCm)} cm`;
   if (id === 'toe') return `${Math.round(m.value)}°`;
   if (id === 'baseWidth') return `${Math.round(m.value * 100)}%`;
+  if (id === 'headForward') return `${cm(m.value)} ${m.value >= 0 ? 'ahead' : 'back'}`;
   return cm(m.value);
 }
 
@@ -641,6 +642,12 @@ function summaryText(sess) {
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   };
   const cm = (v) => (v == null ? '—' : `${Math.round(v * settings.heightCm)} cm`);
+  const headFwd = () => {
+    const v = sess.reps.map((r) => r.metrics.headForward).filter(Boolean).map((m) => m.v);
+    if (!v.length) return '—';
+    const a = v.reduce((x, y) => x + y, 0) / v.length;
+    return `${Math.round(Math.abs(a) * settings.heightCm)} cm ${a >= 0 ? 'ahead' : 'back'}`;
+  };
   const faults = Object.entries(sum.faults).sort((a, b) => b[1] - a[1]);
   const nameOf = (id) => (METRICS.find((m) => m.id === id) || {}).name || id;
   const top = faults[0];
@@ -650,7 +657,7 @@ function summaryText(sess) {
     `Reps: ${sum.reps} · Avg score: ${sum.avgScore}%`,
     'Green %: ' + METRICS.map(({ id, name }) => `${name} ${sum.perMetric[id] == null ? '—' : sum.perMetric[id] + '%'}`).join(' · '),
     top ? `Main fault: ${nameOf(top[0])} (${top[1]} reps) — cue: ${topCue}` : 'Main fault: none',
-    `Averages: toe ${avg('toe') == null ? '—' : Math.round(avg('toe')) + '°'} · step off-line ${cm(avg('stepWide'))} · knee lift ${cm(avg('kneeLift'))} · head bob ${cm(avg('headBob'))} · head off foot ${cm(avg('headOverFoot'))}`,
+    `Averages: toe ${avg('toe') == null ? '—' : Math.round(avg('toe')) + '°'} · step off-line ${cm(avg('stepWide'))} · knee lift ${cm(avg('kneeLift'))} · head bob ${cm(avg('headBob'))} · head off foot ${cm(avg('headOverFoot'))} · head vs knee ${headFwd()}`,
   ].join('\n');
 }
 

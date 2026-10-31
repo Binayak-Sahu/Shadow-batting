@@ -47,6 +47,28 @@ function bodyHeightPx(frames, visMin, F, B) {
   return h > 10 ? h : null;
 }
 
+// Same for MediaPipe WORLD landmarks (metres, 3D). Visibility from the image point.
+function avgWorld(frames, idx, visMin) {
+  let sx = 0, sy = 0, sz = 0, n = 0;
+  for (const f of frames) {
+    const p = f.world && f.world[idx];
+    const q = f.lm && f.lm[idx];
+    if (p && q && q.v >= visMin) { sx += p.x; sy += p.y; sz += p.z; n++; }
+  }
+  return n >= 2 ? { x: sx / n, y: sy / n, z: sz / n, n } : null;
+}
+
+/** Body height in metres from world landmarks (same 0.88 rule as bodyHeightPx). */
+function bodyHeightM(frames, visMin, F, B) {
+  const nose = avgWorld(frames, LM.NOSE, visMin);
+  const heelF = avgWorld(frames, F.HEEL, visMin);
+  const heelB = avgWorld(frames, B.HEEL, visMin);
+  if (!nose || !heelF) return null;
+  const heelY = heelB ? (heelF.y + heelB.y) / 2 : heelF.y;
+  const h = (heelY - nose.y) / NOSE_TO_HEIGHT;
+  return h > 0.5 && h < 2.6 ? h : null;
+}
+
 function between(frames, t0, t1) {
   return frames.filter((f) => f.ok && f.t >= t0 && f.t <= t1);
 }
@@ -90,6 +112,7 @@ export function computeBaseline(frames, cfg) {
 
   return {
     heightPx,
+    heightM: bodyHeightM(good, vis, F, B), // null if no world landmarks
     stanceWidth: ankleF && ankleB ? Math.hypot(ankleF.x - ankleB.x, ankleF.y - ankleB.y) / heightPx : null,
     nose,
     hipY: hipL && hipR ? (hipL.y + hipR.y) / 2 : hipL ? hipL.y : null,
@@ -295,6 +318,8 @@ export const METRICS = [
   { id: 'kneeLift', name: 'Knee lift', unit: 'H' },
   { id: 'headBob', name: 'Head bob', unit: 'H' },
   { id: 'baseWidth', name: 'Base', unit: '×' },
+  // New in v1.1 (3D, needs tuning on real reps) — last, so it is the main cue only when nothing else is off.
+  { id: 'headForward', name: 'Head forward', unit: 'H' },
 ];
 
 const GRADE_POINTS = { good: 2, warn: 1, bad: 0 };
@@ -333,25 +358,37 @@ export function computeRepMetrics(rep, baseline, cfg) {
   const m = {};
 
   // 1) FRONT-TOE DIRECTION (at landing; averaged over the planted frames).
-  //    v = heel→toe vector of the LEFT foot in the image.
+  //    3D (default when MediaPipe gives world landmarks): heel→toe in metres.
+  //      sideways = dx · offSign,  towards the camera = −dz  (smaller z = closer)
+  //      angle = atan2(sideways, towards). No camera height/distance needed.
+  //    2D fallback: v = heel→toe vector of the front foot in the image.
   //    sideways part  = v.x · offSign            (true size)
   //    towards-camera = v.y / k                   (undo ground foreshortening)
   //    angle = atan2(sideways, towards-camera)    0° = toe at the bowler,
   //    +90° = toe pointing square to the off side (cover/point), − = leg side.
   {
-    const heel = avgPoint(plant, F.HEEL, vis);
-    const toe = avgPoint(plant, F.TOE, vis);
-    if (heel && toe) {
-      const side = (toe.x - heel.x) * off;
-      const towards = (toe.y - heel.y) / k;
-      const deg = (Math.atan2(side, towards) * 180) / Math.PI;
+    let deg = null, method = null;
+    const wHeel = cfg.toeMethod !== '2d' ? avgWorld(plant, F.HEEL, vis) : null;
+    const wToe = cfg.toeMethod !== '2d' ? avgWorld(plant, F.TOE, vis) : null;
+    if (wHeel && wToe) {
+      deg = (Math.atan2((wToe.x - wHeel.x) * off, -(wToe.z - wHeel.z)) * 180) / Math.PI;
+      method = '3d';
+    } else {
+      const heel = avgPoint(plant, F.HEEL, vis);
+      const toe = avgPoint(plant, F.TOE, vis);
+      if (heel && toe) {
+        deg = (Math.atan2((toe.x - heel.x) * off, (toe.y - heel.y) / k) * 180) / Math.PI;
+        method = '2d';
+      }
+    }
+    if (deg !== null) {
       let g;
       if (deg >= -th.toeAngle.good && deg <= th.toeAngle.good) g = 'good';
       else g = grade(Math.abs(deg), th.toeAngle);
       const label = g === 'good' ? 'Towards bowler'
         : deg > 0 ? (g === 'warn' ? 'Slightly open' : 'Pointing to cover')
         : (g === 'warn' ? 'Toe to leg side' : 'Toe far to leg');
-      m.toe = { value: deg, grade: g, label, dir: deg >= 0 ? 'off' : 'leg' };
+      m.toe = { value: deg, grade: g, label, dir: deg >= 0 ? 'off' : 'leg', method };
     } else m.toe = null;
   }
 
@@ -446,6 +483,22 @@ export function computeRepMetrics(rep, baseline, cfg) {
     } else m.baseWidth = null;
   }
 
+  // 7) HEAD FORWARD (3D only): at the finish, is the head over the front knee
+  //    or behind it (falling back)? Uses depth (z) of nose vs front knee.
+  //      ahead = (knee z − nose z) / body height   (+ = head nearer the bowler)
+  //    Graded on how far BEHIND the knee the head is; being over or a bit
+  //    ahead of the knee is good.
+  {
+    const nose = avgWorld(fin, LM.NOSE, vis);
+    const knee = avgWorld(fin, F.KNEE, vis);
+    const hm = bodyHeightM(pre, vis, F, B) || baseline.heightM;
+    if (nose && knee && hm) {
+      const v = (knee.z - nose.z) / hm;
+      const g = grade(Math.max(0, -v), th.headForward);
+      m.headForward = { value: v, grade: g, label: g === 'good' ? 'Head over knee' : g === 'warn' ? 'Head a bit back' : 'Head behind knee' };
+    } else m.headForward = null;
+  }
+
   return finishRep(m);
 }
 
@@ -456,6 +509,7 @@ const CUES = {
   kneeLift: () => 'Smaller step, slide it',
   headBob: () => 'Head level, glide forward',
   baseWidth: () => 'Reset your stance',
+  headForward: () => 'Lean in, head over front knee',
 };
 
 /** Pick worst fault (red before amber, then priority order) and score. */
