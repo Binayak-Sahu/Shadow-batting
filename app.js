@@ -1,5 +1,5 @@
 // app.js — screens, camera, main loop, session, storage.
-import { APP_VERSION, SHOTS, SETTINGS_FIELDS, cloneDefaults, mergeSettings, getPath, setPath } from './config.js';
+import { APP_VERSION, APP_BUILD, SHOTS, SETTINGS_FIELDS, cloneDefaults, mergeSettings, getPath, setPath } from './config.js';
 import { createPoseTracker, LM, frontSide } from './pose.js';
 import { summarizeSession, METRICS } from './metrics.js';
 import { ReplayBuffer, ReplayPlayer, makeView, drawSkeleton } from './replay.js';
@@ -28,6 +28,7 @@ const S = {
   session: null, buffer: null, player: null, cardTimer: 0, notOkSince: null,
   fpsCount: 0, fpsT: 0, fps: 0, slowSecs: 0, slowTipShown: false,
   pipe: null, rec: null, lastRec: null, lastT: 0, debug: false, debugT: 0, lastResult: null,
+  paused: false, gestureShown: false, gestureTimer: 0,
   wakeLock: null, audio: null, pendingEnd: false, starting: false,
   modelOverride: null, switching: false, fpsFrom: 0,
 };
@@ -62,7 +63,8 @@ function renderHome() {
     b.addEventListener('click', () => { shotId = s.id; renderHome(); });
     box.appendChild(b);
   }
-  $('version').textContent = `v${APP_VERSION} · video never leaves your phone`;
+  const build = APP_BUILD.startsWith('__') ? 'dev' : APP_BUILD;
+  $('version').textContent = `v${APP_VERSION} (${build}) · video never leaves your phone`;
   $('btnLast').disabled = !store.get('sm.sessions', []).length;
 }
 
@@ -168,9 +170,45 @@ async function keepAwake() {
   } catch (e) { S.wakeLock = null; /* not supported or refused — fine */ }
 }
 function releaseAwake() { try { S.wakeLock && S.wakeLock.release(); } catch (e) { /* ignore */ } S.wakeLock = null; }
+// Leaving the app (home button, screen off, call): stop the camera cleanly.
+// Coming back: restart it and recalibrate, keeping the reps done so far.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && S.phase !== 'idle') keepAwake();
+  if (document.visibilityState === 'hidden') { if (S.session && S.stream && !S.paused) pauseSession(); return; }
+  if (S.paused) resumeSession();
+  else if (S.phase !== 'idle') keepAwake();
 });
+function pauseSession() {
+  S.paused = true;
+  stopLoop();
+  S.player && S.player.stop();
+  S.buffer && S.buffer.clear();
+  clearTimeout(S.cardTimer);
+  hideCard();
+  stopCamera();
+  releaseAwake();
+  try { speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+}
+async function resumeSession() {
+  S.paused = false;
+  if (!S.session) return;
+  try {
+    loading('Resuming camera…');
+    await startCamera();
+    await ensureTracker();
+  } catch (e) {
+    loadingError(e.message || String(e));
+    return;
+  }
+  loadingDone();
+  resetCalibrationUi();
+  S.pipe.recalibrate();
+  if (S.rec) S.rec.event(S.lastT, 'recal');
+  setPhase('setup');
+  msg('Welcome back — take your stance to recalibrate', 'warn');
+  S.fpsFrom = performance.now() + 3000; S.slowSecs = 0;
+  keepAwake();
+  startLoop();
+}
 
 // ---------------------------------------------------------------- sound / voice
 function initAudio() {
@@ -273,6 +311,7 @@ function setSideLabels(baseline) {
 }
 
 async function endSession() {
+  S.paused = false;
   stopLoop();
   S.player && S.player.stop();
   S.buffer && S.buffer.clear();
@@ -820,6 +859,17 @@ function wire() {
 wire();
 renderHome();
 show('home');
+// Updates: the service worker installs a new version in the background. When it
+// takes over, offer a reload (never in the middle of a session).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Service worker not registered', e));
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && S.phase === 'idle') reg.update().catch(() => {});
+    });
+  }).catch((e) => console.warn('Service worker not registered', e));
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) $('updateBar').classList.remove('hidden'); // first install isn't an "update"
+  });
+  $('btnReload').addEventListener('click', () => location.reload());
 }

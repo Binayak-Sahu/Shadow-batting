@@ -1,6 +1,8 @@
-// sw.js — offline cache. Bump CACHE_VERSION whenever you change any app file,
-// so phones fetch the new version.
-const CACHE_VERSION = 'shadow-mirror-v1.0.0';
+// sw.js — offline cache.
+// BUILD is replaced with the commit id by the GitHub Pages workflow on every
+// deploy, so the phone always notices a new version (no manual bump needed).
+const BUILD = '__BUILD__';
+const CACHE_VERSION = `shadow-mirror-${BUILD}`;
 const MP_VERSION = '0.10.14'; // keep in sync with config.js
 const MP = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 
@@ -8,6 +10,7 @@ const MP = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js', './pose.js', './metrics.js',
   './replay.js', './config.js', './pipeline.js', './manifest.json', './icon.svg', './test.html', './lab.html',
+  './icon-192.png', './icon-512.png', './icon-maskable-512.png',
 ];
 // Big library/model files: fetched best-effort at install, and also cached
 // the first time the app uses them.

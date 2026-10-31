@@ -8,7 +8,8 @@
 <title>Shadow Mirror</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -27,6 +28,10 @@
       <button id="btnLast" class="btn">Last summary</button>
       <button id="btnSettings" class="btn">Settings</button>
       <button id="btnHelp" class="btn">Help</button>
+    </div>
+    <div id="updateBar" class="update hidden">
+      <span>A new version is ready.</span>
+      <button id="btnReload" class="btn small primary">Reload</button>
     </div>
     <p id="version" class="tiny"></p>
     <noscript><p class="big-note">This app needs JavaScript turned on.</p></noscript>
@@ -156,9 +161,13 @@
       <li>Point it <b>straight at you</b> and keep it level (not tilted up or down).</li>
       <li>Stand in the <b>middle</b> of the picture, head to feet visible, with a little space below your feet.</li>
       <li>Tap <b>Start</b>, walk back, take your stance and <b>hold still 2 s</b> to calibrate.</li>
-      <li>Play the shot, <b>hold the finish</b> ~½ s, then go back to your stance. Reps are counted automatically.</li>
-      <li>Your <b>front (left) leg is yellow</b>. The labels on the screen edges show which side is OFF and LEG (the picture is mirrored like a mirror).</li>
+      <li>Play the shot, <b>hold the finish</b> ~½ s, then go back to your stance. Reps are counted automatically and the phone <b>says</b> the rep number and cue.</li>
+      <li>Your <b>front leg is yellow</b> (left leg for a right-hander, right leg for a left-hander). The labels on the screen edges show which side is OFF and LEG (the picture is mirrored like a mirror).</li>
     </ol>
+    <h3>Hands-free</h3>
+    <p><b>Both hands above your head for 2 s</b> = finish the session. <b>One hand</b> = recalibrate. (Settings → Hands-up gestures.)</p>
+    <h3>Back camera</h3>
+    <p>Settings → Camera → <b>Back</b> gives a sharper picture indoors or in the evening. You won't see the screen, so the cues are spoken.</p>
     <h3>Icons</h3>
     <p class="legend"><span class="lg good">● ✓ green = good</span> <span class="lg warn">▲ ! amber = close</span> <span class="lg bad">■ ✕ red = fix this</span></p>
     <h3>Good light</h3>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#0b0d10"/><g transform="translate(51.2 51.2) scale(0.8)">
+  
+  <rect x="56" y="56" width="400" height="400" rx="80" fill="none" stroke="#4fc3ff" stroke-width="16" opacity="0.35"/>
+  <!-- batter in front-foot defence -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="250" cy="138" r="34" stroke="#f2f5f9" stroke-width="22"/>
+    <path d="M250 176 L236 280" stroke="#f2f5f9" stroke-width="26"/>
+    <path d="M236 280 L196 360 L170 410" stroke="#ffd400" stroke-width="26"/>
+    <path d="M236 280 L292 352 L330 410" stroke="#f2f5f9" stroke-width="26"/>
+    <path d="M246 206 L208 262 L232 300" stroke="#f2f5f9" stroke-width="20"/>
+    <path d="M232 300 L254 404" stroke="#4fc3ff" stroke-width="18"/>
+    <path d="M150 412 L196 412" stroke="#ffd400" stroke-width="18"/>
+  </g>
+</g></svg>
