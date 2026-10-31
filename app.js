@@ -87,11 +87,12 @@ async function startCamera() {
   if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     throw new Error('Camera needs a secure (https://) page. Open the app from your GitHub Pages link.');
   }
+  const facingMode = settings.camera === 'back' ? 'environment' : 'user';
   const tries = [
     // 1280×720: more pixels on the feet (the hardest points to track).
-    { video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false },
-    { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } }, audio: false },
-    { video: { facingMode: 'user' }, audio: false },
+    { video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false },
+    { video: { facingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } }, audio: false },
+    { video: { facingMode }, audio: false },
     { video: true, audio: false },
   ];
   let lastErr;
@@ -110,7 +111,7 @@ async function startCamera() {
       throw new Error('Camera permission was denied. In Chrome: tap the icon left of the address bar → Permissions → Camera → Allow. Then tap Retry.');
     }
     if (n === 'NotReadableError') throw new Error('The camera is busy in another app. Close that app and tap Retry.');
-    if (n === 'NotFoundError' || n === 'OverconstrainedError') throw new Error('No front camera found on this device.');
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') throw new Error(`No ${settings.camera === 'back' ? 'back' : 'front'} camera found on this device.`);
     throw new Error('Could not start the camera' + (lastErr ? ` (${lastErr.name || lastErr.message})` : '') + '.');
   }
   const v = $('video');
@@ -174,6 +175,10 @@ document.addEventListener('visibilitychange', () => {
 // ---------------------------------------------------------------- sound / voice
 function initAudio() {
   try { S.audio = S.audio || new (window.AudioContext || window.webkitAudioContext)(); S.audio.resume(); } catch (e) { S.audio = null; }
+  // Android Chrome only speaks after speech was started from a tap: unlock it now (silently).
+  try {
+    if (voiceOn() && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); }
+  } catch (e) { /* ignore */ }
 }
 function beep(g) {
   if (!settings.beep || !S.audio) return;
@@ -190,8 +195,10 @@ function beep(g) {
     }
   } catch (e) { /* ignore */ }
 }
+// Voice is always on with the back camera: you can't see the screen then.
+const voiceOn = () => settings.voice || settings.camera === 'back';
 function speak(text) {
-  if (!settings.voice || !('speechSynthesis' in window)) return;
+  if (!voiceOn() || !('speechSynthesis' in window)) return;
   try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.speak(u); } catch (e) { /* ignore */ }
 }
 
@@ -393,8 +400,10 @@ function flashTip(text) {
 
 // Apply what the pipeline decided to the screen.
 function handleOut(out) {
+  if (out.gesture) onGesture(out.gesture);
   if (out.phaseChanged) setPhase(out.phase);
-  if (out.msg !== undefined) msg(out.msg && out.msg.text, out.msg && out.msg.kind);
+  const gestureMsg = out.gesture && !out.gesture.fire;
+  if (out.msg !== undefined && !gestureMsg) msg(out.msg && out.msg.text, out.msg && out.msg.kind);
   if (out.clearWarn && $('msg').classList.contains('warn')) msg('');
   if (out.ring !== undefined) setRing(out.ring);
   if (out.calibrated) {
@@ -415,6 +424,28 @@ function handleOut(out) {
   else if (ev.type === 'land') $('phaseLabel').textContent = 'HOLD';
   else if (ev.type === 'abort') $('phaseLabel').textContent = 'GET SET';
   else if (ev.type === 'rep') { $('phaseLabel').textContent = 'GET SET'; onRep(ev.rep, out.result, out.frame); }
+}
+
+// Hands-up gestures: show progress, then finish or recalibrate.
+function onGesture(g) {
+  const what = g.kind === 'finish' ? 'Both hands up — finishing' : 'One hand up — recalibrating';
+  if (!g.fire) {
+    if (!S.gestureShown) beep('warn');
+    S.gestureShown = true;
+    msg(`${what} in ${Math.max(0, Math.ceil(2 - g.p * 2))}…`, 'warn');
+    clearTimeout(S.gestureTimer);
+    S.gestureTimer = setTimeout(() => { S.gestureShown = false; if ($('msg').textContent.startsWith(what)) msg(''); }, 400);
+    return;
+  }
+  S.gestureShown = false;
+  clearTimeout(S.gestureTimer);
+  msg('');
+  if (g.kind === 'finish') { speak('Session finished'); endSession(); return; }
+  speak('Recalibrate. Take your stance.');
+  resetCalibrationUi(); // the pipeline already recalibrated (and does so again when a recording is re-run)
+}
+function resetCalibrationUi() {
+  S.player && S.player.stop(); hideCard(); setSideLabels(null); S.baseline = null;
 }
 
 // ---------------------------------------------------------------- debug overlay
@@ -497,7 +528,7 @@ function onRep(rep, res, frame) {
   showCard(res);
   showLastStrip(res);
   beep(res.worstGrade);
-  speak(res.cue);
+  speak(`Rep ${S.session.reps.length}. ${res.cue}`);
 
   const done = S.session.reps.length >= S.session.target;
   const after = () => {
@@ -743,7 +774,7 @@ function wire() {
 
   $('btnStop').addEventListener('click', endSession);
   $('btnRecal').addEventListener('click', () => {
-    S.player && S.player.stop(); hideCard(); setSideLabels(null); S.baseline = null;
+    resetCalibrationUi();
     if (S.pipe) S.pipe.recalibrate();
     if (S.rec) S.rec.event(S.lastT, 'recal');
     setPhase('setup');

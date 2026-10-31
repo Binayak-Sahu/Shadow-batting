@@ -10,6 +10,29 @@ import { LandmarkSmoother, allVisible, framingCheck, essentialFor, frontSide } f
 import { RepDetector, computeBaseline, computeRepMetrics, isStill } from './metrics.js';
 
 const CALIB_SECONDS = 2;
+const GESTURE_SECONDS = 2;
+
+/**
+ * Hands-free control. A wrist counts as "up" when it is clearly above the
+ * nose (0.05 H). Hold for 2 s:  both hands = finish,  one hand = recalibrate.
+ * After firing, both hands must come down before the next gesture.
+ */
+export class GestureDetector {
+  constructor(visMin) { this.visMin = visMin; this.reset(); }
+  reset() { this.kind = null; this.since = null; this.needDown = false; }
+  update(lm, t, Hpx) {
+    const nose = lm && lm[0];
+    const up = (i) => !!(lm && nose && lm[i] && lm[i].v >= this.visMin && nose.v >= this.visMin && lm[i].y < nose.y - 0.05 * Hpx);
+    const n = (up(15) ? 1 : 0) + (up(16) ? 1 : 0);
+    if (this.needDown) { if (n === 0) this.needDown = false; return null; }
+    const kind = n === 2 ? 'finish' : n === 1 ? 'recal' : null;
+    if (kind !== this.kind) { this.kind = kind; this.since = kind ? t : null; }
+    if (!kind) return null;
+    const p = (t - this.since) / GESTURE_SECONDS;
+    if (p >= 1) { this.needDown = true; this.kind = null; this.since = null; return { kind, fire: true, p: 1 }; }
+    return { kind, fire: false, p };
+  }
+}
 
 /**
  * Round raw MediaPipe output to the precision we record, so a recording
@@ -49,6 +72,7 @@ export class Pipeline {
     this.calibFrames = [];
     this.calibStart = null;
     this.F = frontSide(cfg.handedness);
+    this.gestures = cfg.gestures ? new GestureDetector(cfg.visibilityMin) : null;
     this.essential = essentialFor(cfg.handedness);
   }
 
@@ -82,6 +106,20 @@ export class Pipeline {
     const out = { frame, phase: this.phase, phaseChanged: false };
     const go = (p) => { this.phase = p; out.phase = p; out.phaseChanged = true; };
     const vis = cfg.visibilityMin;
+
+    // Gestures: not while stepping; recalibrate only makes sense once live.
+    if (this.gestures && frame.lm) {
+      const stepping = this.detector && (this.detector.state === 'stepping' || this.detector.state === 'landed');
+      const Hpx = this.baseline ? this.baseline.heightPx : h * 0.6;
+      const g = stepping ? null : this.gestures.update(frame.lm, t, Hpx);
+      if (g && (g.kind === 'finish' || this.phase === 'live')) {
+        out.gesture = g;
+        if (g.fire) {
+          if (g.kind === 'recal') { this.recalibrate(); go('setup'); }
+          return out;
+        }
+      }
+    }
 
     if (this.phase === 'setup') {
       const fc = framingCheck(frame.lm, w, h, vis, cfg.handedness);

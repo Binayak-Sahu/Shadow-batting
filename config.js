@@ -38,7 +38,9 @@ export const DEFAULTS = {
   minFps: 18,
   targetReps: 30,
   beep: true,
-  voice: false,
+  voice: true,              // say "Rep 7. Toe to mid-off" — you can't read the screen from 3–4 m
+  gestures: true,           // both hands above head 2 s = finish, one hand = recalibrate
+  camera: 'front',          // 'front' (see yourself) or 'back' (sharper; voice is then always on)
   replay: true,
   record: true,             // keep this session's landmarks (no video) for "Download recording"
   debug: false,             // start with the debug numbers shown (or tap the fps line)
@@ -89,13 +91,15 @@ export const SETTINGS_FIELDS = [
   { group: 'Session' },
   { key: 'targetReps', label: 'Target reps', type: 'number', min: 5, max: 200, step: 1 },
   { key: 'beep', label: 'Beep after each rep', type: 'toggle' },
-  { key: 'voice', label: 'Speak the cue (voice)', type: 'toggle' },
+  { key: 'voice', label: 'Speak rep number + cue (voice)', type: 'toggle' },
+  { key: 'gestures', label: 'Hands-up gestures (finish / recalibrate)', type: 'toggle' },
   { key: 'replay', label: 'Slow-motion replay', type: 'toggle' },
   { key: 'record', label: 'Keep recording for download (no video)', type: 'toggle' },
   { key: 'debug', label: 'Show debug numbers', type: 'toggle' },
   { key: 'replaySpeed', label: 'Replay speed (0.2–1)', type: 'number', min: 0.2, max: 1, step: 0.05 },
   { key: 'cardSeconds', label: 'Result card seconds (replay off)', type: 'number', min: 1, max: 10, step: 0.5 },
   { group: 'Camera & model' },
+  { key: 'camera', label: 'Camera', type: 'select', options: [['front', 'Front (see yourself)'], ['back', 'Back (sharper, voice on)']] },
   { key: 'model', label: 'Pose model', type: 'select', options: [['heavy', 'Heavy (most accurate)'], ['full', 'Full (balanced)'], ['lite', 'Lite (fastest)']] },
   { key: 'autoFallback', label: 'Auto-switch Heavy → Full if slow', type: 'toggle' },
   { key: 'toeMethod', label: 'Toe angle method', type: 'select', options: [['3d', '3D (recommended)'], ['2d', '2D flat picture']] },
@@ -133,7 +137,7 @@ export function cloneDefaults() {
 // version of the app saved on the phone; add the change to MIGRATIONS.
 export const SETTINGS_VERSION = 2;
 const MIGRATIONS = {
-  2: (s) => { s.model = 'heavy'; }, // v1.1: Heavy model is the new default
+  2: (s) => { s.model = 'heavy'; s.voice = true; }, // v1.1: Heavy model + spoken cues are the new defaults
 };
 export function mergeSettings(saved) {
   if (saved && typeof saved === 'object') {

@@ -351,6 +351,29 @@ test('2D toe method still works when chosen', () => {
   return `toe ${r[0].metrics.toe.v.toFixed(1)}° (2D)`;
 });
 
+test('Gestures: one hand up 2 s → recalibrate, both hands up 2 s → finish', () => {
+  seed = 31;
+  const frames = rawFrames([{ type: 'still', dur: 2.6, opts: {} }, { type: 'still', dur: 7, opts: {} }]);
+  const raise = (f, both) => { const n = f.raw[0]; f.raw[16] = { ...f.raw[16], y: n.y - 0.08, visibility: 0.95 }; if (both) f.raw[15] = { ...f.raw[15], y: n.y - 0.08, visibility: 0.95 }; };
+  for (const f of frames) {
+    if (f.t >= 3.5 && f.t < 6.0) raise(f, false);   // one hand: recalibrate
+    if (f.t >= 7.0 && f.t < 9.5) raise(f, true);    // both: finish
+  }
+  const p = new Pipeline(cfg);
+  const fired = [];
+  for (const f of frames) {
+    const o = p.push(f.raw, f.world, f.t, W, H_IMG);
+    if (o.gesture && o.gesture.fire) fired.push(`${o.gesture.kind}@${f.t.toFixed(1)}`);
+  }
+  expect(fired.length === 2 && fired[0].startsWith('recal') && fired[1].startsWith('finish'), 'fired: ' + fired.join(', '));
+  const off = cloneDefaults(); off.gestures = false;
+  const p2 = new Pipeline(off);
+  let any = false;
+  for (const f of frames) { const o = p2.push(f.raw, f.world, f.t, W, H_IMG); if (o.gesture) any = true; }
+  expect(!any, 'gesture fired with gestures off');
+  return fired.join(', ');
+});
+
 const rows = document.getElementById('rows');
 let pass = 0;
 for (const t of tests) {
