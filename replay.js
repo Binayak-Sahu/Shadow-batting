@@ -1,7 +1,7 @@
 // replay.js — rolling buffer of the last few seconds (small video frames +
 // landmarks) and the slow-motion replay with skeleton and guide lines.
 
-import { LM, BONES } from './pose.js';
+import { LM, BONES, frontSide } from './pose.js';
 
 const COLORS = {
   bone: 'rgba(255,255,255,0.85)',
@@ -13,7 +13,11 @@ const COLORS = {
   nose: '#ff8a00',
 };
 
-const FRONT_LEG = new Set([25, 27, 29, 31]);
+// front leg drawn in yellow: hip–knee–ankle–heel–toe of the stepping leg
+function frontLeg(handedness) {
+  const F = frontSide(handedness);
+  return new Set([F.HIP, F.KNEE, F.ANKLE, F.HEEL, F.TOE]);
+}
 
 /**
  * Maps raw camera pixels → canvas pixels with "cover" fit and optional
@@ -30,13 +34,14 @@ export function makeView(canvasW, canvasH, srcW, srcH, mirror = true) {
   };
 }
 
-export function drawSkeleton(ctx, lm, view, visMin, scale = 1) {
+export function drawSkeleton(ctx, lm, view, visMin, scale = 1, handedness = 'right') {
   if (!lm) return;
+  const FRONT_LEG = frontLeg(handedness);
   ctx.lineCap = 'round';
   for (const [a, b] of BONES) {
     const p = lm[a], q = lm[b];
     if (!p || !q || p.v < visMin * 0.6 || q.v < visMin * 0.6) continue;
-    const front = FRONT_LEG.has(a) && FRONT_LEG.has(b) || (a === 23 && b === 25);
+    const front = FRONT_LEG.has(a) && FRONT_LEG.has(b) && !(a === 23 && b === 24);
     ctx.strokeStyle = front ? COLORS.front : COLORS.bone;
     ctx.lineWidth = (front ? 7 : 5) * scale;
     ctx.beginPath();
@@ -47,7 +52,7 @@ export function drawSkeleton(ctx, lm, view, visMin, scale = 1) {
   for (const i of [0, 11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]) {
     const p = lm[i];
     if (!p || p.v < visMin * 0.6) continue;
-    ctx.fillStyle = i === 0 ? COLORS.nose : FRONT_LEG.has(i) ? COLORS.front : COLORS.joint;
+    ctx.fillStyle = i === 0 ? COLORS.nose : FRONT_LEG.has(i) && i !== 23 && i !== 24 ? COLORS.front : COLORS.joint;
     ctx.beginPath();
     ctx.arc(view.x(p.x), view.y(p.y), (i === 0 ? 9 : 6) * scale, 0, Math.PI * 2);
     ctx.fill();
@@ -75,8 +80,9 @@ function arrow(ctx, x0, y0, x1, y1, color, w) {
  *  - Plumb line (green): vertical from the front ankle up — your nose should
  *    be on it at the finish.
  */
-export function drawGuides(ctx, frame, rep, view, srcW, srcH, visMin, scale = 1) {
+export function drawGuides(ctx, frame, rep, view, srcW, srcH, visMin, scale = 1, handedness = 'right') {
   const lm = frame.lm;
+  const F = frontSide(handedness);
   if (!lm) return;
   // line to bowler
   if (rep.ref) {
@@ -93,7 +99,7 @@ export function drawGuides(ctx, frame, rep, view, srcW, srcH, visMin, scale = 1)
       ctx.setLineDash([]);
     }
   }
-  const heel = lm[LM.L_HEEL], toe = lm[LM.L_TOE], ankle = lm[LM.L_ANKLE];
+  const heel = lm[F.HEEL], toe = lm[F.TOE], ankle = lm[F.ANKLE];
   if (frame.t >= rep.landT && heel.v >= visMin && toe.v >= visMin) {
     const ex = heel.x + (toe.x - heel.x) * 2.5;
     const ey = heel.y + (toe.y - heel.y) * 2.5;
@@ -171,7 +177,7 @@ export class ReplayPlayer {
     this.raf = 0;
     this.active = false;
   }
-  play({ rep, srcW, srcH, speed, visMin, buffer, onDone }) {
+  play({ rep, srcW, srcH, speed, visMin, buffer, onDone, handedness = 'right' }) {
     this.stop();
     const frames = rep.frames.filter((f) => f.lm && f.t >= rep.startT - 0.3);
     if (!frames.length) { onDone && onDone(); return; }
@@ -218,8 +224,8 @@ export class ReplayPlayer {
         ctx.drawImage(lastBmp, view.ox, view.oy, view.dw, view.dh);
         ctx.restore();
       }
-      drawGuides(ctx, f, rep, view, srcW, srcH, visMin, dpr);
-      drawSkeleton(ctx, f.lm, view, visMin, dpr);
+      drawGuides(ctx, f, rep, view, srcW, srcH, visMin, dpr, handedness);
+      drawSkeleton(ctx, f.lm, view, visMin, dpr, handedness);
       // label
       // label sits above the bottom button bar
       const by = ch - 120 * dpr;

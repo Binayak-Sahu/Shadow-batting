@@ -14,7 +14,21 @@ export const LM = {
   L_ANKLE: 27, R_ANKLE: 28,
   L_HEEL: 29, R_HEEL: 30,
   L_TOE: 31, R_TOE: 32, // "foot index" in MediaPipe = tip of the foot
+  L_WRIST: 15, R_WRIST: 16,
 };
+
+/**
+ * Landmarks of the FRONT leg (the one that steps towards the bowler):
+ * left leg for a right-hander, right leg for a left-hander.
+ */
+export function frontSide(handedness) {
+  return handedness === 'left'
+    ? { HIP: LM.R_HIP, KNEE: LM.R_KNEE, ANKLE: LM.R_ANKLE, HEEL: LM.R_HEEL, TOE: LM.R_TOE }
+    : { HIP: LM.L_HIP, KNEE: LM.L_KNEE, ANKLE: LM.L_ANKLE, HEEL: LM.L_HEEL, TOE: LM.L_TOE };
+}
+export function backSide(handedness) {
+  return frontSide(handedness === 'left' ? 'right' : 'left');
+}
 
 // Lines drawn for the skeleton.
 export const BONES = [
@@ -115,12 +129,38 @@ class OneEuro {
  * beta is given in "per H" units; we convert using a rough pixel scale.
  */
 export class LandmarkSmoother {
-  constructor(params) {
+  /** worldH: for world landmarks (metres) pass a typical body height in those units (≈1.7). */
+  constructor(params, worldH = null) {
     this.params = params;
+    this.worldH = worldH;
     this.reset();
   }
   reset() {
-    this.fx = []; this.fy = []; this.v = [];
+    this.fx = []; this.fy = []; this.fz = []; this.v = [];
+  }
+  /**
+   * Smooths MediaPipe WORLD landmarks (metres, origin between the hips,
+   * x = image right, y = down, z = away from the camera). Visibility is taken
+   * from the matching image landmarks. Output: array of {x, y, z, v}.
+   */
+  applyWorld(world, raw, tSec) {
+    const { minCutoff, beta, dCutoff } = this.params;
+    const b = beta / (this.worldH || 1.7);
+    const out = new Array(world.length);
+    for (let i = 0; i < world.length; i++) {
+      if (!this.fx[i]) {
+        this.fx[i] = new OneEuro(minCutoff, b, dCutoff);
+        this.fy[i] = new OneEuro(minCutoff, b, dCutoff);
+        this.fz[i] = new OneEuro(minCutoff, b, dCutoff);
+      }
+      out[i] = {
+        x: this.fx[i].filter(world[i].x, tSec),
+        y: this.fy[i].filter(world[i].y, tSec),
+        z: this.fz[i].filter(world[i].z, tSec),
+        v: raw && raw[i] ? (raw[i].visibility ?? 1) : 1,
+      };
+    }
+    return out;
   }
   apply(raw, tSec, width, height) {
     const { minCutoff, beta, dCutoff } = this.params;
@@ -147,7 +187,12 @@ export class LandmarkSmoother {
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
-export const ESSENTIAL = [LM.NOSE, LM.L_HIP, LM.R_HIP, LM.L_KNEE, LM.L_ANKLE, LM.L_HEEL, LM.L_TOE];
+/** Points that must be visible for a frame to count (front leg depends on batting hand). */
+export function essentialFor(handedness) {
+  const F = frontSide(handedness);
+  return [LM.NOSE, LM.L_HIP, LM.R_HIP, F.KNEE, F.ANKLE, F.HEEL, F.TOE];
+}
+export const ESSENTIAL = essentialFor('right');
 
 export function isVisible(lm, idx, min) {
   return !!(lm && lm[idx] && lm[idx].v >= min);
@@ -164,13 +209,14 @@ export function dist(a, b) {
  * Returns { ok, msg }. Directions are given for YOU (person facing the phone).
  * In the raw camera image your own LEFT side appears on the image RIGHT.
  */
-export function framingCheck(lm, w, h, visMin) {
+export function framingCheck(lm, w, h, visMin, handedness = 'right') {
+  const F = frontSide(handedness);
   if (!lm) return { ok: false, msg: 'Can’t see you — stand in front of the phone' };
   if (!isVisible(lm, LM.NOSE, visMin)) return { ok: false, msg: 'Head not visible — face the phone' };
-  const feet = [LM.L_ANKLE, LM.L_HEEL, LM.L_TOE];
+  const feet = [F.ANKLE, F.HEEL, F.TOE];
   if (!allVisible(lm, feet, visMin)) return { ok: false, msg: 'Step back — feet not visible' };
   const nose = lm[LM.NOSE];
-  const footY = Math.max(lm[LM.L_HEEL].y, lm[LM.L_TOE].y);
+  const footY = Math.max(lm[F.HEEL].y, lm[F.TOE].y);
   // leave room below the feet: the front foot moves DOWN the picture when you step forward
   if (footY > h * 0.92) return { ok: false, msg: 'Step back — leave space below your feet' };
   if (nose.y < h * 0.04) return { ok: false, msg: 'Step back — head at the top edge' };

@@ -74,9 +74,11 @@
 
     <div id="lastResult" class="last hidden"></div>
 
+    <pre id="debug" class="debug hidden" aria-hidden="true"></pre>
+
     <div class="livebtns">
       <button id="btnRecal" class="btn small">Recalibrate</button>
-      <span id="fps" class="fps"></span>
+      <button id="fps" class="fps" type="button" title="Tap for debug numbers"></button>
       <button id="btnStop" class="btn small danger">Finish</button>
     </div>
 
@@ -105,6 +107,10 @@
       <p id="copyNote" class="tiny"></p>
       <textarea id="copyFallback" class="hidden" rows="6" readonly></textarea>
       <button id="btnCsvAll" class="btn link">Export all sessions (CSV)</button>
+    </div>
+    <div id="recRow" class="hidden">
+      <button id="btnRec" class="btn">Download recording</button>
+      <p id="recNote" class="tiny"></p>
     </div>
     <div class="row2">
       <button id="btnAgain" class="btn primary">New session</button>
@@ -157,6 +163,10 @@
     <p class="legend"><span class="lg good">● ✓ green = good</span> <span class="lg warn">▲ ! amber = close</span> <span class="lg bad">■ ✕ red = fix this</span></p>
     <h3>Good light</h3>
     <p>Light on you (not behind you), plain background, shorts or fitted trousers and visible shoes help the tracking. Measure in daylight — evening shadows make feet jumpy.</p>
+    <h3>Tuning (advanced)</h3>
+    <p>Tap the small fps line at the bottom of the live screen to show the debug numbers.
+      After a session, <b>Download recording</b> saves your landmarks (no video).
+      Open it in <a href="lab.html">Lab</a> to re-run it with your current Settings and see which reps change colour.</p>
     <p><a href="test.html">Run the self-test</a></p>
     <button class="btn" data-home>Back</button>
   </section>

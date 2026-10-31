@@ -1,8 +1,9 @@
 // app.js — screens, camera, main loop, session, storage.
 import { APP_VERSION, SHOTS, SETTINGS_FIELDS, cloneDefaults, mergeSettings, getPath, setPath } from './config.js';
-import { createPoseTracker, LandmarkSmoother, ESSENTIAL, allVisible, framingCheck, LM } from './pose.js';
-import { RepDetector, computeBaseline, computeRepMetrics, summarizeSession, isStill, METRICS } from './metrics.js';
+import { createPoseTracker, LM, frontSide } from './pose.js';
+import { summarizeSession, METRICS } from './metrics.js';
 import { ReplayBuffer, ReplayPlayer, makeView, drawSkeleton } from './replay.js';
+import { Pipeline, Recorder, quantizeRaw, quantizeWorld, quantizeTime, compactResult } from './pipeline.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +27,7 @@ const S = {
   recent: [], baseline: null, detector: null, calibFrames: [], calibStart: null,
   session: null, buffer: null, player: null, cardTimer: 0, notOkSince: null,
   fpsCount: 0, fpsT: 0, fps: 0, slowSecs: 0, slowTipShown: false,
+  pipe: null, rec: null, lastRec: null, lastT: 0, debug: false, debugT: 0, lastResult: null,
   wakeLock: null, audio: null, pendingEnd: false, starting: false,
   modelOverride: null, switching: false, fpsFrom: 0,
 };
@@ -215,7 +217,9 @@ async function startSession() {
     return;
   }
   loadingDone();
-  S.smoother = new LandmarkSmoother(settings.smoothing);
+  S.pipe = new Pipeline(settings);
+  S.rec = settings.record ? new Recorder(settings, { ua: navigator.userAgent }) : null;
+  S.lastT = 0;
   S.buffer = S.buffer || new ReplayBuffer(4, 20, 240);
   S.player = S.player || new ReplayPlayer($('replayCanvas'));
   S.session = {
@@ -223,13 +227,13 @@ async function startSession() {
     target: settings.targetReps, reps: [], avgScore: 0,
   };
   S.pendingEnd = false;
-  S.recent = [];
   S.lastTs = 0; S.lastVideoTime = -1; S.detectErrors = 0;
   S.slowSecs = 0; S.fpsCount = 0; S.fpsT = 0;
   S.fpsFrom = performance.now() + 3000; // ignore the first seconds (model warm-up)
   updateTopbar();
   setPhase('setup');
   keepAwake();
+  toggleDebug(settings.debug);
   startLoop();
   S.starting = false;
 }
@@ -241,7 +245,7 @@ function setPhase(p) {
   $('silhouette').classList.toggle('hidden', !(p === 'setup' || p === 'calib'));
   $('calibRing').classList.toggle('hidden', p !== 'calib');
   if (p === 'setup') { msg('Stand side-on in your stance, whole body inside the outline'); $('phaseLabel').textContent = 'SETUP'; }
-  if (p === 'calib') { S.calibFrames = []; S.calibStart = null; $('phaseLabel').textContent = 'CALIBRATE'; }
+  if (p === 'calib') { $('phaseLabel').textContent = 'CALIBRATE'; }
   if (p === 'live') { $('phaseLabel').textContent = 'GET SET'; }
 }
 
@@ -271,6 +275,10 @@ async function endSession() {
   S.phase = 'idle';
   const sess = S.session;
   S.session = null;
+  S.lastRec = S.rec && S.rec.frameCount ? S.rec : null;
+  S.rec = null;
+  $('recRow').classList.toggle('hidden', !S.lastRec);
+  if (S.lastRec) $('recNote').textContent = `${S.lastRec.frameCount} frames, landmarks only (no video). Open it in Lab to re-run with new settings.`;
   if (sess && sess.reps.length) {
     saveSession(sess);
     renderSummary(sess);
@@ -343,20 +351,19 @@ function loop(meta) {
   countFps(ts);
 
   const vw = video.videoWidth, vh = video.videoHeight;
-  const raw = res && res.landmarks && res.landmarks[0];
-  const frame = { t: ts / 1000, w: vw, h: vh, lm: null, ok: false };
-  if (raw) {
-    frame.lm = S.smoother.apply(raw, frame.t, vw, vh);
-    frame.ok = allVisible(frame.lm, ESSENTIAL, settings.visibilityMin);
-  } else {
-    S.smoother.reset();
-  }
-  S.recent.push(frame);
-  while (S.recent.length && frame.t - S.recent[0].t > 1.5) S.recent.shift();
+  // Quantize first: the recording then replays to exactly the same numbers.
+  const raw = quantizeRaw(res && res.landmarks && res.landmarks[0]);
+  const world = raw ? quantizeWorld(res.worldLandmarks && res.worldLandmarks[0]) : null;
+  const t = quantizeTime(ts / 1000);
+  S.lastT = t;
+  if (S.rec) S.rec.frame(raw, world, t, vw, vh);
 
+  const out = S.pipe.push(raw, world, t, vw, vh);
+  const frame = out.frame;
   if (settings.replay && frame.lm && S.phase === 'live') S.buffer.capture(video, frame);
-  handleFrame(frame);
+  handleOut(out);
   if (!S.player.active) drawLive(frame);
+  if (S.debug) drawDebug(frame, out);
 }
 
 function countFps(ts) {
@@ -384,64 +391,64 @@ function flashTip(text) {
   setTimeout(() => t.classList.add('hidden'), 6000);
 }
 
-function bodyHeightQuick(lm) {
-  return Math.max(10, (lm[LM.L_HEEL].y - lm[LM.NOSE].y) / 0.88);
+// Apply what the pipeline decided to the screen.
+function handleOut(out) {
+  if (out.phaseChanged) setPhase(out.phase);
+  if (out.msg !== undefined) msg(out.msg && out.msg.text, out.msg && out.msg.kind);
+  if (out.clearWarn && $('msg').classList.contains('warn')) msg('');
+  if (out.ring !== undefined) setRing(out.ring);
+  if (out.calibrated) {
+    const base = out.calibrated;
+    S.baseline = base;
+    setSideLabels(base);
+    if (S.rec) S.rec.event(out.frame.t, 'calibrated', { offSign: base.offSign, heightPx: Math.round(base.heightPx) });
+    const side = base.offScreenSide.toUpperCase();
+    msg(`Ready! Off side is on the ${side} of the screen. Play your shot.`, 'good');
+    speak('Ready');
+    beep('good');
+    setTimeout(() => { if (S.phase === 'live' && $('msg').classList.contains('good')) msg(''); }, 3500);
+  }
+  const ev = out.ev;
+  if (!ev) return;
+  if (ev.type === 'armed') $('phaseLabel').textContent = 'READY';
+  else if (ev.type === 'start') $('phaseLabel').textContent = 'STEP…';
+  else if (ev.type === 'land') $('phaseLabel').textContent = 'HOLD';
+  else if (ev.type === 'abort') $('phaseLabel').textContent = 'GET SET';
+  else if (ev.type === 'rep') { $('phaseLabel').textContent = 'GET SET'; onRep(ev.rep, out.result, out.frame); }
 }
 
-function handleFrame(frame) {
-  const vis = settings.visibilityMin;
-  if (S.phase === 'setup') {
-    const fc = framingCheck(frame.lm, frame.w, frame.h, vis);
-    if (fc.ok && frame.ok) setPhase('calib');
-    else msg(fc.msg, 'warn');
-    return;
+// ---------------------------------------------------------------- debug overlay
+// Tap the fps line (bottom) to show/hide. Shows what the app is measuring right now.
+function toggleDebug(on = !S.debug) {
+  S.debug = on;
+  $('debug').classList.toggle('hidden', !on);
+}
+function drawDebug(frame, out) {
+  const now = performance.now();
+  if (now - (S.debugT || 0) < 200) return; // 5× a second is enough to read
+  S.debugT = now;
+  const p = S.pipe, d = p.detector, b = p.baseline, F = frontSide(settings.handedness);
+  const lm = frame.lm;
+  const vis = (i) => (lm && lm[i] ? lm[i].v.toFixed(2) : '–');
+  const lines = [
+    `phase ${p.phase}${d ? ' · rep ' + d.state : ''} · frame ${frame.ok ? 'OK' : 'NOT OK'} · time ${S.timeSource}`,
+    `vis nose ${vis(LM.NOSE)} · front knee ${vis(F.KNEE)} ankle ${vis(F.ANKLE)} heel ${vis(F.HEEL)} toe ${vis(F.TOE)}`,
+    `world ${frame.world ? 'yes' : 'no'} · rec ${S.rec ? S.rec.frameCount + ' fr' : 'off'}`,
+  ];
+  if (b) lines.push(`H ${Math.round(b.heightPx)} px · off ${b.offSign > 0 ? '+x' : '−x'} (${b.offSource}) · stance ${b.stanceWidth ? b.stanceWidth.toFixed(3) : '–'} H`);
+  if (d) {
+    const R = settings.rep;
+    const ref = d.ref, a = lm && lm[F.ANKLE];
+    const disp = ref && a ? Math.hypot(a.x - ref.x, a.y - ref.y) / d.H : 0;
+    lines.push(`ankle speed ${d.speed.toFixed(2)} H/s (start > ${R.startSpeed}, still < ${R.stillSpeed}) · moved ${disp.toFixed(3)} H`);
   }
-  if (S.phase === 'calib') {
-    const fc = framingCheck(frame.lm, frame.w, frame.h, vis);
-    if (!fc.ok || !frame.ok) { setPhase('setup'); msg(fc.msg, 'warn'); return; }
-    const still = isStill(S.recent, frame.t, bodyHeightQuick(frame.lm));
-    if (!still) {
-      S.calibFrames = []; S.calibStart = null;
-      msg('Get in your stance and hold still');
-      setRing(0);
-      return;
-    }
-    if (S.calibStart === null) S.calibStart = frame.t;
-    S.calibFrames.push(frame);
-    const prog = (frame.t - S.calibStart) / 2;
-    setRing(prog);
-    msg('Hold still… measuring your stance');
-    if (prog >= 1) {
-      const base = computeBaseline(S.calibFrames, settings);
-      if (!base) { S.calibFrames = []; S.calibStart = null; return; }
-      S.baseline = base;
-      S.detector = new RepDetector(settings, base.heightPx);
-      setSideLabels(base);
-      setPhase('live');
-      const side = base.offScreenSide.toUpperCase();
-      msg(`Ready! Off side is on the ${side} of the screen. Play your shot.`, 'good');
-      speak('Ready');
-      beep('good');
-      setTimeout(() => { if (S.phase === 'live' && $('msg').classList.contains('good')) msg(''); }, 3500);
-    }
-    return;
+  if (S.lastResult) {
+    lines.push('last rep: ' + METRICS.map(({ id }) => {
+      const m = S.lastResult.metrics[id];
+      return `${id} ${m ? (+m.value).toFixed(id === 'toe' ? 0 : 3) + ' ' + m.grade[0] : '–'}`;
+    }).join(' · '));
   }
-  if (S.phase === 'live') {
-    if (!frame.ok) {
-      if (S.notOkSince === null) S.notOkSince = frame.t;
-      if (frame.t - S.notOkSince > 0.7) msg(frame.lm ? 'Step back / feet not visible' : 'Can’t see you — step into frame', 'warn');
-    } else if (S.notOkSince !== null) {
-      S.notOkSince = null;
-      if ($('msg').classList.contains('warn')) msg('');
-    }
-    const ev = S.detector.update(frame);
-    if (!ev) return;
-    if (ev.type === 'armed') $('phaseLabel').textContent = 'READY';
-    else if (ev.type === 'start') $('phaseLabel').textContent = 'STEP…';
-    else if (ev.type === 'land') $('phaseLabel').textContent = 'HOLD';
-    else if (ev.type === 'abort') $('phaseLabel').textContent = 'GET SET';
-    else if (ev.type === 'rep') { $('phaseLabel').textContent = 'GET SET'; onRep(ev.rep, frame); }
-  }
+  $('debug').textContent = lines.join('\n');
 }
 
 function setRing(p) {
@@ -462,8 +469,8 @@ function drawLive(frame) {
   if (!frame.lm) return;
   const view = makeView(cw, ch, frame.w, frame.h, true);
   // faint line to the bowler from your stance front foot (after calibration)
-  if (S.baseline && S.baseline.ankleL && S.phase === 'live') {
-    const a = S.baseline.ankleL, cx = frame.w / 2, cy = frame.h / 2;
+  if (S.baseline && S.baseline.ankleF && S.phase === 'live') {
+    const a = S.baseline.ankleF, cx = frame.w / 2, cy = frame.h / 2;
     const dy = a.y - cy;
     if (dy > 1) {
       const t = (frame.h - cy) / dy;
@@ -476,18 +483,15 @@ function drawLive(frame) {
       ctx.setLineDash([]);
     }
   }
-  drawSkeleton(ctx, frame.lm, view, settings.visibilityMin, dpr);
+  drawSkeleton(ctx, frame.lm, view, settings.visibilityMin, dpr, settings.handedness);
 }
 
 // ---------------------------------------------------------------- per rep
-function onRep(rep, frame) {
-  const res = computeRepMetrics(rep, S.baseline, settings);
-  const compact = {};
-  for (const { id } of METRICS) {
-    const m = res.metrics[id];
-    compact[id] = m ? { v: +m.value.toFixed(4), g: m.grade, l: m.label } : null;
-  }
-  S.session.reps.push({ n: S.session.reps.length + 1, at: Date.now(), score: res.score, worst: res.worst, cue: res.cue, metrics: compact });
+function onRep(rep, res, frame) {
+  S.lastResult = res;
+  const c = compactResult(res, METRICS.map((m) => m.id));
+  if (S.rec) S.rec.result(frame.t, c);
+  S.session.reps.push({ n: S.session.reps.length + 1, at: Date.now(), ...c });
   saveSession(S.session); // save as we go, in case the tab is closed
   updateTopbar();
   showCard(res);
@@ -506,7 +510,7 @@ function onRep(rep, frame) {
     S.cardTimer = setTimeout(() => $('card').classList.add('compact'), 1800);
     S.player.play({
       rep, srcW: frame.w, srcH: frame.h, speed: settings.replaySpeed,
-      visMin: settings.visibilityMin, buffer: S.buffer, onDone: after,
+      visMin: settings.visibilityMin, buffer: S.buffer, onDone: after, handedness: settings.handedness,
     });
   } else {
     S.cardTimer = setTimeout(after, settings.cardSeconds * 1000);
@@ -617,7 +621,9 @@ function csvFor(sessions) {
   return lines.join('\n');
 }
 function download(name, text) {
-  const blob = new Blob([text], { type: 'text/csv' });
+  downloadBlob(name, new Blob([text], { type: 'text/csv' }));
+}
+function downloadBlob(name, blob) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -722,6 +728,7 @@ function wire() {
   $('btnHelp').addEventListener('click', () => show('help'));
   $('btnLast').addEventListener('click', () => {
     const all = store.get('sm.sessions', []);
+    $('recRow').classList.add('hidden');
     renderSummary(all.length ? all[all.length - 1] : null);
     show('summary');
   });
@@ -729,7 +736,10 @@ function wire() {
 
   $('btnStop').addEventListener('click', endSession);
   $('btnRecal').addEventListener('click', () => {
-    S.player && S.player.stop(); hideCard(); setSideLabels(null); S.baseline = null; setPhase('setup');
+    S.player && S.player.stop(); hideCard(); setSideLabels(null); S.baseline = null;
+    if (S.pipe) S.pipe.recalibrate();
+    if (S.rec) S.rec.event(S.lastT, 'recal');
+    setPhase('setup');
   });
   $('replayCanvas').addEventListener('click', () => S.player && S.player.skip());
   $('card').addEventListener('click', () => { if (S.player && S.player.active) S.player.skip(); else hideCard(); });
@@ -754,6 +764,12 @@ function wire() {
     if (!ok) { $('copyFallback').value = summaryText(shownSession); $('copyFallback').classList.remove('hidden'); }
   });
   $('btnAgain').addEventListener('click', startSession);
+  $('fps').addEventListener('click', () => toggleDebug());
+  $('btnRec').addEventListener('click', async () => {
+    if (!S.lastRec) return;
+    const { blob, ext } = await S.lastRec.blob();
+    downloadBlob(`shadow-mirror-rec-${S.lastRec.data.date.slice(0, 16).replace(/[:T]/g, '-')}.${ext}`, blob);
+  });
 
   $('btnSaveSettings').addEventListener('click', saveSettingsFromForm);
   $('btnResetSettings').addEventListener('click', () => {

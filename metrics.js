@@ -20,7 +20,7 @@
 // (both toes point towards point/cover). Positive "signed" values below
 // always mean "towards the off side".
 
-import { LM } from './pose.js';
+import { LM, frontSide, backSide } from './pose.js';
 
 const NOSE_TO_HEIGHT = 0.88;
 
@@ -36,12 +36,13 @@ function avgPoint(frames, idx, visMin) {
   return n ? { x: sx / n, y: sy / n, n } : null;
 }
 
-function bodyHeightPx(frames, visMin) {
+// F = front-leg landmarks, B = back-leg landmarks (see frontSide in pose.js).
+function bodyHeightPx(frames, visMin, F, B) {
   const nose = avgPoint(frames, LM.NOSE, visMin);
-  const heelL = avgPoint(frames, LM.L_HEEL, visMin);
-  const heelR = avgPoint(frames, LM.R_HEEL, visMin);
-  if (!nose || !heelL) return null;
-  const heelY = heelR ? (heelL.y + heelR.y) / 2 : heelL.y;
+  const heelF = avgPoint(frames, F.HEEL, visMin);
+  const heelB = avgPoint(frames, B.HEEL, visMin);
+  if (!nose || !heelF) return null;
+  const heelY = heelB ? (heelF.y + heelB.y) / 2 : heelF.y;
   const h = (heelY - nose.y) / NOSE_TO_HEIGHT;
   return h > 10 ? h : null;
 }
@@ -60,16 +61,17 @@ function between(frames, t0, t1) {
  */
 export function computeBaseline(frames, cfg) {
   const vis = cfg.visibilityMin;
+  const F = frontSide(cfg.handedness), B = backSide(cfg.handedness);
   const good = frames.filter((f) => f.ok);
-  const heightPx = bodyHeightPx(good, vis);
+  const heightPx = bodyHeightPx(good, vis, F, B);
   if (!heightPx) return null;
 
-  const ankleL = avgPoint(good, LM.L_ANKLE, vis);
-  const ankleR = avgPoint(good, LM.R_ANKLE, vis);
-  const heelL = avgPoint(good, LM.L_HEEL, vis);
-  const toeL = avgPoint(good, LM.L_TOE, vis);
-  const heelR = avgPoint(good, LM.R_HEEL, vis);
-  const toeR = avgPoint(good, LM.R_TOE, vis);
+  const ankleF = avgPoint(good, F.ANKLE, vis);
+  const ankleB = avgPoint(good, B.ANKLE, vis);
+  const heelF = avgPoint(good, F.HEEL, vis);
+  const toeF = avgPoint(good, F.TOE, vis);
+  const heelB = avgPoint(good, B.HEEL, vis);
+  const toeB = avgPoint(good, B.TOE, vis);
   const nose = avgPoint(good, LM.NOSE, vis);
   const hipL = avgPoint(good, LM.L_HIP, vis);
   const hipR = avgPoint(good, LM.R_HIP, vis);
@@ -80,18 +82,18 @@ export function computeBaseline(frames, cfg) {
   // image LEFT (−x) of the raw camera picture; left-hander's on the right.
   const defaultSign = cfg.handedness === 'left' ? 1 : -1;
   let s = 0;
-  if (heelL && toeL) s += toeL.x - heelL.x;
-  if (heelR && toeR) s += toeR.x - heelR.x;
+  if (heelF && toeF) s += toeF.x - heelF.x;
+  if (heelB && toeB) s += toeB.x - heelB.x;
   let offSign = defaultSign;
   let offSource = 'default';
   if (Math.abs(s) > 0.03 * heightPx) { offSign = Math.sign(s); offSource = 'feet'; }
 
   return {
     heightPx,
-    stanceWidth: ankleL && ankleR ? Math.hypot(ankleL.x - ankleR.x, ankleL.y - ankleR.y) / heightPx : null,
+    stanceWidth: ankleF && ankleB ? Math.hypot(ankleF.x - ankleB.x, ankleF.y - ankleB.y) / heightPx : null,
     nose,
     hipY: hipL && hipR ? (hipL.y + hipR.y) / 2 : hipL ? hipL.y : null,
-    ankleL,
+    ankleF,
     offSign,
     offSource,
     // Mirrored preview: raw −x shows on the SCREEN RIGHT.
@@ -100,13 +102,18 @@ export function computeBaseline(frames, cfg) {
 }
 
 /** Quick stillness test used during calibration (nose + front ankle). */
-export function isStill(frames, nowT, heightPx, maxSpeed = 0.08, window = 0.25) {
-  const recent = frames.filter((f) => f.ok && f.t >= nowT - window);
-  if (recent.length < 3) return false;
+export function isStill(frames, nowT, heightPx, ankleIdx = LM.L_ANKLE, maxSpeed = 0.08, window = 0.25) {
+  let recent = frames.filter((f) => f.ok && f.t >= nowT - window);
+  if (recent.length < 3) {
+    // slow phone (< 12 fps): use the last 3 good frames if they are recent enough
+    const ok = frames.filter((f) => f.ok);
+    recent = ok.slice(-3);
+    if (recent.length < 3 || nowT - recent[0].t > 0.75) return false;
+  }
   const a = recent[0], b = recent[recent.length - 1];
   const dt = b.t - a.t;
   if (dt <= 0) return false;
-  for (const idx of [LM.NOSE, LM.L_ANKLE]) {
+  for (const idx of [LM.NOSE, ankleIdx]) {
     const v = Math.hypot(b.lm[idx].x - a.lm[idx].x, b.lm[idx].y - a.lm[idx].y) / dt / heightPx;
     if (v > maxSpeed) return false;
   }
@@ -131,6 +138,8 @@ export class RepDetector {
   constructor(cfg, heightPx) {
     this.cfg = cfg;
     this.H = heightPx;
+    this.A = frontSide(cfg.handedness).ANKLE; // the front ankle drives everything
+    this.speed = 0;
     this.reset();
   }
   reset() {
@@ -155,12 +164,12 @@ export class RepDetector {
       if (now.t - f.t >= w) break;
     }
     if (!old || old === now) return 0;
-    const a = old.lm[LM.L_ANKLE], b = now.lm[LM.L_ANKLE];
+    const a = old.lm[this.A], b = now.lm[this.A];
     return Math.hypot(b.x - a.x, b.y - a.y) / (now.t - old.t) / this.H;
   }
 
   _avgAnkle(t0, t1) {
-    return avgPoint(this.hist.filter((f) => f.ok && f.t >= t0 && f.t <= t1), LM.L_ANKLE, 0);
+    return avgPoint(this.hist.filter((f) => f.ok && f.t >= t0 && f.t <= t1), this.A, 0);
   }
 
   /** Feed one frame {t, lm, ok}. Returns null or an event object. */
@@ -187,8 +196,9 @@ export class RepDetector {
       return { type: 'abort', reason: 'lost' };
     }
 
-    const p = frame.lm[LM.L_ANKLE];
+    const p = frame.lm[this.A];
     const speed = this._speed(frame);
+    this.speed = speed;
     const still = speed < R.stillSpeed;
     const t = frame.t;
 
@@ -221,7 +231,7 @@ export class RepDetector {
           for (let i = this.hist.length - 1; i >= 0; i--) {
             const f = this.hist[i];
             if (!f.ok) break;
-            const q = f.lm[LM.L_ANKLE];
+            const q = f.lm[this.A];
             if (Math.hypot(q.x - this.ref.x, q.y - this.ref.y) / this.H < R.startDisp * 0.3) break;
             startT = f.t;
           }
@@ -309,6 +319,7 @@ export function computeRepMetrics(rep, baseline, cfg) {
   const off = baseline.offSign;
   const k = cfg.camHeightM / cfg.camDistM; // ground foreshortening factor (see top)
   const R = cfg.rep;
+  const F = frontSide(cfg.handedness), B = backSide(cfg.handedness);
 
   const frames = rep.frames;
   let pre = between(frames, rep.startT - R.preWindow, rep.startT - 0.03);
@@ -318,7 +329,7 @@ export function computeRepMetrics(rep, baseline, cfg) {
   const fin = between(frames, rep.finishT - 0.12, rep.finishT);
 
   // Scale for this rep: your height in px just before the step.
-  const H = bodyHeightPx(pre, vis) || baseline.heightPx;
+  const H = bodyHeightPx(pre, vis, F, B) || baseline.heightPx;
   const m = {};
 
   // 1) FRONT-TOE DIRECTION (at landing; averaged over the planted frames).
@@ -328,8 +339,8 @@ export function computeRepMetrics(rep, baseline, cfg) {
   //    angle = atan2(sideways, towards-camera)    0° = toe at the bowler,
   //    +90° = toe pointing square to the off side (cover/point), − = leg side.
   {
-    const heel = avgPoint(plant, LM.L_HEEL, vis);
-    const toe = avgPoint(plant, LM.L_TOE, vis);
+    const heel = avgPoint(plant, F.HEEL, vis);
+    const toe = avgPoint(plant, F.TOE, vis);
     if (heel && toe) {
       const side = (toe.x - heel.x) * off;
       const towards = (toe.y - heel.y) / k;
@@ -349,10 +360,10 @@ export function computeRepMetrics(rep, baseline, cfg) {
   //    (so a whole-body sway doesn't count), landing minus stance, / H.
   //    If the back ankle is hidden, the front ankle alone is used.
   {
-    const aLpre = avgPoint(pre, LM.L_ANKLE, vis);
-    const aLland = avgPoint(plant, LM.L_ANKLE, vis);
-    const aRpre = avgPoint(pre, LM.R_ANKLE, vis);
-    const aRland = avgPoint(plant, LM.R_ANKLE, vis);
+    const aLpre = avgPoint(pre, F.ANKLE, vis);
+    const aLland = avgPoint(plant, F.ANKLE, vis);
+    const aRpre = avgPoint(pre, B.ANKLE, vis);
+    const aRland = avgPoint(plant, B.ANKLE, vis);
     if (aLpre && aLland) {
       let dx = aLland.x - aLpre.x;
       if (aRpre && aRland) dx -= aRland.x - aRpre.x;
@@ -368,10 +379,10 @@ export function computeRepMetrics(rep, baseline, cfg) {
   //    lift = (stance knee y − smallest knee y during step+plant) / H
   //    (y is down, so a smaller y = higher knee).
   {
-    const kPre = avgPoint(pre, LM.L_KNEE, vis);
+    const kPre = avgPoint(pre, F.KNEE, vis);
     let minY = Infinity;
     for (const f of stepFr.concat(plant)) {
-      const q = f.lm[LM.L_KNEE];
+      const q = f.lm[F.KNEE];
       if (q.v >= vis && q.y < minY) minY = q.y;
     }
     if (kPre && minY < Infinity) {
@@ -411,8 +422,8 @@ export function computeRepMetrics(rep, baseline, cfg) {
   //    Note: from front-on we can only see sideways; forward lean is not measured.
   {
     const nose = avgPoint(fin, LM.NOSE, vis);
-    const knee = avgPoint(fin, LM.L_KNEE, vis);
-    const ankle = avgPoint(fin, LM.L_ANKLE, vis);
+    const knee = avgPoint(fin, F.KNEE, vis);
+    const ankle = avgPoint(fin, F.ANKLE, vis);
     if (nose && knee && ankle) {
       const footX = (knee.x + ankle.x) / 2;
       const v = ((nose.x - footX) * off) / H;
@@ -425,8 +436,8 @@ export function computeRepMetrics(rep, baseline, cfg) {
   // 6) BASE STABILITY: stance width just before this rep vs calibration.
   //    change = | width_now / width_calibration − 1 |
   {
-    const aL = avgPoint(pre, LM.L_ANKLE, vis);
-    const aR = avgPoint(pre, LM.R_ANKLE, vis);
+    const aL = avgPoint(pre, F.ANKLE, vis);
+    const aR = avgPoint(pre, B.ANKLE, vis);
     if (aL && aR && baseline.stanceWidth) {
       const w = Math.hypot(aL.x - aR.x, aL.y - aR.y) / H;
       const v = Math.abs(w / baseline.stanceWidth - 1);

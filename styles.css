@@ -140,7 +140,12 @@ a { color: var(--accent); }
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.75));
 }
-.fps { font-size: 13px; color: var(--muted); }
+.fps { font: 13px/1.2 system-ui, sans-serif; color: var(--muted); background: none; border: 0; padding: 10px 4px; cursor: pointer; text-align: center; }
+.debug {
+  position: absolute; left: 6px; right: 6px; top: calc(max(8px, env(safe-area-inset-top)) + 64px); z-index: 6; margin: 0;
+  font: 12px/1.35 ui-monospace, monospace; color: #e6f3ff; white-space: pre-wrap;
+  background: rgba(0,0,0,0.72); padding: 8px; border-radius: 10px; pointer-events: none;
+}
 
 .loading {
   position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column;

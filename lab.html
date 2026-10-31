@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d10">
+<title>Shadow Mirror Lab</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 16px/1.45 system-ui, sans-serif; background: #0b0d10; color: #eef; margin: 0; padding: 16px; max-width: 900px; margin-inline: auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  p, label { color: #a7b1bf; }
+  a { color: #9fd3ff; }
+  .box { background: #151920; border: 1px solid #2a2f38; border-radius: 12px; padding: 12px; margin: 12px 0; }
+  input[type=file] { color: #eef; max-width: 100%; }
+  #sum { font-size: 18px; font-weight: 700; color: #eef; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td, th { border-bottom: 1px solid #2a2f38; padding: 5px 4px; text-align: left; white-space: nowrap; }
+  th { color: #a7b1bf; font-weight: 600; }
+  .good { color: #22c55e; } .warn { color: #f5b400; } .bad { color: #ef4444; }
+  .chg { background: #2b2410; }
+  .pass { color: #5be37a; } .fail { color: #ff5a5a; }
+</style>
+</head>
+<body>
+<h1>Lab — re-run a recording</h1>
+<p>Pick a file from <b>Download recording</b> (session summary). It is re-run through exactly the same code as the live app.
+  Nothing is uploaded — it stays in this browser. <a href="./">Back to app</a></p>
+
+<div class="box">
+  <input id="file" type="file" accept=".gz,.json,application/json,application/gzip">
+  <p><label><input id="useMine" type="checkbox"> Use my current Settings (instead of the settings saved in the recording)</label></p>
+  <div id="sum">No file loaded.</div>
+  <p id="info"></p>
+</div>
+<div class="wrap"><table id="tbl"></table></div>
+
+<script type="module">
+import { readRecording, runRecording } from './pipeline.js';
+import { METRICS } from './metrics.js';
+import { mergeSettings } from './config.js';
+
+const $ = (id) => document.getElementById(id);
+let rec = null;
+
+function mySettings() {
+  try { return mergeSettings(JSON.parse(localStorage.getItem('sm.settings'))); } catch (e) { return mergeSettings(null); }
+}
+
+function cell(m, id) {
+  if (!m) return '<td>—</td>';
+  const v = id === 'toe' ? Math.round(m.v) + '°' : (+m.v).toFixed(3);
+  return `<td class="${m.g}">${v} ${m.g}</td>`;
+}
+
+function render() {
+  if (!rec) return;
+  const ids = METRICS.map((m) => m.id);
+  const useMine = $('useMine').checked;
+  const t0 = performance.now();
+  const out = runRecording(rec, ids, useMine ? mySettings() : null);
+  const ms = Math.round(performance.now() - t0);
+  const live = rec.results || [];
+  // pair re-run reps with live reps by time (within 0.05 s)
+  let same = 0;
+  const rows = out.results.map((r, i) => {
+    const l = live.find((x) => Math.abs(x.t - r.t) < 0.05);
+    const identical = l && JSON.stringify(l.metrics) === JSON.stringify(r.metrics) && l.score === r.score;
+    if (identical) same++;
+    const changed = l && !identical;
+    return `<tr class="${changed ? 'chg' : ''}"><td>${i + 1}</td><td>${r.t.toFixed(1)}</td><td>${l ? l.score + '%' : '—'}</td><td>${r.score}%</td>` +
+      `<td>${r.cue}</td>` + ids.map((id) => cell(r.metrics[id], id)).join('') + '</tr>';
+  });
+  $('tbl').innerHTML = `<tr><th>#</th><th>t (s)</th><th>live</th><th>re-run</th><th>cue</th>${METRICS.map((m) => `<th>${m.name}</th>`).join('')}</tr>` + rows.join('');
+  const dur = rec.frames.length ? (rec.frames[rec.frames.length - 1][0] - rec.frames[0][0]) / 1e4 : 0;
+  const ok = !useMine && live.length === out.results.length && same === live.length;
+  $('sum').innerHTML = useMine
+    ? `${out.results.length} reps with your current Settings (live session had ${live.length}). Changed rows are highlighted.`
+    : `<span class="${ok ? 'pass' : 'fail'}">${ok ? '✔' : '✘'} ${same} / ${live.length} live reps reproduced exactly</span> (re-run found ${out.results.length}).`;
+  $('info').textContent = `Recorded ${rec.date.slice(0, 16).replace('T', ' ')} · app v${rec.app} · ${rec.frames.length} frames · ${dur.toFixed(0)} s · ` +
+    `${rec.w}×${rec.h} · model ${rec.settings.model} · ${rec.settings.handedness}-handed · ` +
+    `${out.baselines.length} calibration(s) · world landmarks ${rec.world && rec.world.some((w) => w.length) ? 'yes' : 'no'} · re-run in ${ms} ms`;
+}
+
+$('file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  $('sum').textContent = 'Reading…';
+  try { rec = await readRecording(f); render(); }
+  catch (err) { rec = null; $('sum').textContent = 'Could not read this file: ' + err.message; $('tbl').innerHTML = ''; }
+});
+$('useMine').addEventListener('change', render);
+</script>
+</body>
+</html>

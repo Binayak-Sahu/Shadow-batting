@@ -7,7 +7,7 @@ const MP = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`;
 // App files: must all download, or the install fails (and retries next visit).
 const APP_FILES = [
   './', './index.html', './styles.css', './app.js', './pose.js', './metrics.js',
-  './replay.js', './config.js', './manifest.json', './icon.svg', './test.html',
+  './replay.js', './config.js', './pipeline.js', './manifest.json', './icon.svg', './test.html', './lab.html',
 ];
 // Big library/model files: fetched best-effort at install, and also cached
 // the first time the app uses them.

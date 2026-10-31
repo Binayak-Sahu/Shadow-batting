@@ -40,6 +40,8 @@ export const DEFAULTS = {
   beep: true,
   voice: false,
   replay: true,
+  record: true,             // keep this session's landmarks (no video) for "Download recording"
+  debug: false,             // start with the debug numbers shown (or tap the fps line)
   replaySpeed: 0.4,         // 0.4 = 40% speed slow motion
   cardSeconds: 3,           // result card time when replay is off
   camHeightM: 1.0,          // phone lens height above the roof
@@ -87,6 +89,8 @@ export const SETTINGS_FIELDS = [
   { key: 'beep', label: 'Beep after each rep', type: 'toggle' },
   { key: 'voice', label: 'Speak the cue (voice)', type: 'toggle' },
   { key: 'replay', label: 'Slow-motion replay', type: 'toggle' },
+  { key: 'record', label: 'Keep recording for download (no video)', type: 'toggle' },
+  { key: 'debug', label: 'Show debug numbers', type: 'toggle' },
   { key: 'replaySpeed', label: 'Replay speed (0.2–1)', type: 'number', min: 0.2, max: 1, step: 0.05 },
   { key: 'cardSeconds', label: 'Result card seconds (replay off)', type: 'number', min: 1, max: 10, step: 0.5 },
   { group: 'Camera & model' },
