@@ -27,7 +27,10 @@ const S = {
   session: null, buffer: null, player: null, cardTimer: 0, notOkSince: null,
   fpsCount: 0, fpsT: 0, fps: 0, slowSecs: 0, slowTipShown: false,
   wakeLock: null, audio: null, pendingEnd: false, starting: false,
+  modelOverride: null, switching: false, fpsFrom: 0,
 };
+// Model actually used: Settings choice, unless this session auto-switched away from Heavy.
+const activeModel = () => S.modelOverride || settings.model;
 
 // ---------------------------------------------------------------- screens
 function show(id) {
@@ -122,10 +125,32 @@ function stopCamera() {
 }
 
 async function ensureTracker() {
-  if (S.tracker && S.trackerModel === settings.model) return;
+  const model = activeModel();
+  if (S.tracker && S.trackerModel === model) return;
   if (S.tracker) { S.tracker.close(); S.tracker = null; }
-  S.tracker = await createPoseTracker(settings.model, (t) => loading(t));
-  S.trackerModel = settings.model;
+  S.tracker = await createPoseTracker(model, (t) => loading(t));
+  S.trackerModel = model;
+}
+
+// Heavy is too slow right now (e.g. phone got hot) → switch to Full for the
+// rest of this session. The Settings choice is not changed.
+async function fallbackToFull() {
+  if (S.switching) return;
+  S.switching = true;
+  const fps = S.fps;
+  S.modelOverride = 'full';
+  const old = S.tracker;
+  S.tracker = null; // the loop skips frames while switching
+  try {
+    S.tracker = await createPoseTracker('full', () => {});
+    S.trackerModel = 'full';
+    if (old) old.close();
+    flashTip(`Heavy model too slow (${fps} fps) — switched to Full for this session.`);
+  } catch (e) {
+    S.tracker = old; S.modelOverride = null; // keep going on Heavy
+  }
+  S.slowSecs = 0; S.fpsFrom = performance.now() + 3000;
+  S.switching = false;
 }
 
 // ---------------------------------------------------------------- wake lock
@@ -176,6 +201,7 @@ async function startSession() {
   $('lastResult').classList.add('hidden');
   setSideLabels(null);
   try {
+    S.modelOverride = null;
     loading('Starting camera…');
     await startCamera();
     await ensureTracker();
@@ -197,6 +223,8 @@ async function startSession() {
   S.pendingEnd = false;
   S.recent = [];
   S.lastTs = 0; S.lastVideoTime = -1; S.detectErrors = 0;
+  S.slowSecs = 0; S.fpsCount = 0; S.fpsT = 0;
+  S.fpsFrom = performance.now() + 3000; // ignore the first seconds (model warm-up)
   updateTopbar();
   setPhase('setup');
   keepAwake();
@@ -307,9 +335,12 @@ function countFps(ts) {
   if (ts - S.fpsT >= 1000) {
     S.fps = Math.round((S.fpsCount * 1000) / (ts - S.fpsT));
     S.fpsCount = 0; S.fpsT = ts;
-    $('fps').textContent = `${S.fps} fps · ${S.tracker.delegate}`;
-    S.slowSecs = S.fps < 15 ? S.slowSecs + 1 : 0;
-    if (S.slowSecs >= 5 && !S.slowTipShown && settings.model === 'full') {
+    const model = activeModel();
+    $('fps').textContent = `${S.fps} fps · ${model} · ${S.tracker ? S.tracker.delegate : ''}`;
+    if (ts < S.fpsFrom) return;
+    S.slowSecs = S.fps < settings.minFps ? S.slowSecs + 1 : 0;
+    if (S.slowSecs >= 5 && model === 'heavy' && settings.autoFallback) { fallbackToFull(); return; }
+    if (S.slowSecs >= 5 && !S.slowTipShown && model !== 'lite') {
       S.slowTipShown = true;
       flashTip('Phone is slow (' + S.fps + ' fps). Try Settings → Model: Lite.');
     }

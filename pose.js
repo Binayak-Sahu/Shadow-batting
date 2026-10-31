@@ -65,7 +65,7 @@ export async function createPoseTracker(modelKey = 'full', onStatus = () => {}) 
     }
   }
   if (!landmarker) {
-    throw new Error('Could not load the pose model. Connect to the internet once (about 10 MB), then tap Retry.');
+    throw new Error('Could not load the pose model. Connect to the internet once (Heavy model is about 30 MB), then tap Retry.');
   }
   return {
     delegate,

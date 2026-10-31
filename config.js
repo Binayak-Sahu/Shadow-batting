@@ -2,7 +2,7 @@
 // The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
 // so you normally tune from the app, not by editing this file.
 
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.1.0';
 
 // MediaPipe Tasks Vision, pinned to an exact version (not "latest").
 // If you ever change this, change MP_VERSION in sw.js too.
@@ -12,6 +12,7 @@ export const MP_BUNDLE_URL = `${MP_BASE}/vision_bundle.mjs`;
 export const MP_WASM_URL = `${MP_BASE}/wasm`;
 
 export const MODEL_URLS = {
+  heavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
   lite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
   full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
 };
@@ -29,9 +30,12 @@ export const SHOTS = [
 //          re-measured just before every rep). 0.05 H ≈ 9 cm for a 183 cm person.
 //   deg  = degrees.
 export const DEFAULTS = {
+  settingsVersion: 1,       // see SETTINGS_VERSION below
   handedness: 'right',      // 'right' or 'left' — the FRONT foot is the left foot for a right-hander
   heightCm: 183,            // only used to show values in cm
-  model: 'full',            // 'full' (more accurate feet) or 'lite' (faster)
+  model: 'heavy',           // 'heavy' (most accurate, ~30 MB), 'full', or 'lite' (fastest)
+  autoFallback: true,       // heavy too slow (< minFps for 5 s) → switch to full for this session
+  minFps: 18,
   targetReps: 30,
   beep: true,
   voice: false,
@@ -86,7 +90,8 @@ export const SETTINGS_FIELDS = [
   { key: 'replaySpeed', label: 'Replay speed (0.2–1)', type: 'number', min: 0.2, max: 1, step: 0.05 },
   { key: 'cardSeconds', label: 'Result card seconds (replay off)', type: 'number', min: 1, max: 10, step: 0.5 },
   { group: 'Camera & model' },
-  { key: 'model', label: 'Pose model', type: 'select', options: [['full', 'Full (accurate)'], ['lite', 'Lite (faster)']] },
+  { key: 'model', label: 'Pose model', type: 'select', options: [['heavy', 'Heavy (most accurate)'], ['full', 'Full (balanced)'], ['lite', 'Lite (fastest)']] },
+  { key: 'autoFallback', label: 'Auto-switch Heavy → Full if slow', type: 'toggle' },
   { key: 'camHeightM', label: 'Phone height (m)', type: 'number', min: 0.3, max: 2, step: 0.05 },
   { key: 'camDistM', label: 'Phone distance (m)', type: 'number', min: 1.5, max: 6, step: 0.1 },
   { key: 'visibilityMin', label: 'Min visibility (0–1)', type: 'number', min: 0.1, max: 0.95, step: 0.05 },
@@ -115,7 +120,17 @@ export const SETTINGS_FIELDS = [
 export function cloneDefaults() {
   return JSON.parse(JSON.stringify(DEFAULTS));
 }
+// Bump SETTINGS_VERSION when a new default must override what an older
+// version of the app saved on the phone; add the change to MIGRATIONS.
+export const SETTINGS_VERSION = 2;
+const MIGRATIONS = {
+  2: (s) => { s.model = 'heavy'; }, // v1.1: Heavy model is the new default
+};
 export function mergeSettings(saved) {
+  if (saved && typeof saved === 'object') {
+    saved = JSON.parse(JSON.stringify(saved));
+    for (let v = (saved.settingsVersion || 1) + 1; v <= SETTINGS_VERSION; v++) MIGRATIONS[v] && MIGRATIONS[v](saved);
+  }
   const out = cloneDefaults();
   const walk = (dst, src) => {
     if (!src || typeof src !== 'object') return;
@@ -126,6 +141,7 @@ export function mergeSettings(saved) {
     }
   };
   walk(out, saved);
+  out.settingsVersion = SETTINGS_VERSION;
   return out;
 }
 export function getPath(obj, path) {
