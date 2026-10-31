@@ -209,6 +209,13 @@ export function dist(a, b) {
  * Returns { ok, msg }. Directions are given for YOU (person facing the phone).
  * In the raw camera image your own LEFT side appears on the image RIGHT.
  */
+// Your front foot moves DOWN the picture when you step towards the phone
+// (10–15% of the picture height when the phone is close). In stance it must
+// therefore sit well above the bottom edge, or it lands off-screen and
+// MediaPipe just guesses where it is (found in the first real sessions).
+export const FEET_MAX = 0.78;      // stance feet at most 78% down the picture (the dashed line)
+export const FOOT_OFF_EDGE = 0.95; // landed foot below 95% = left the picture → rep not graded
+
 export function framingCheck(lm, w, h, visMin, handedness = 'right') {
   const F = frontSide(handedness);
   if (!lm) return { ok: false, msg: 'Can’t see you — stand in front of the phone' };
@@ -218,11 +225,11 @@ export function framingCheck(lm, w, h, visMin, handedness = 'right') {
   const nose = lm[LM.NOSE];
   const footY = Math.max(lm[F.HEEL].y, lm[F.TOE].y);
   // leave room below the feet: the front foot moves DOWN the picture when you step forward
-  if (footY > h * 0.92) return { ok: false, msg: 'Step back — leave space below your feet' };
+  if (footY > h * FEET_MAX) return { ok: false, msg: 'Move the phone back — feet above the dashed line' };
   if (nose.y < h * 0.04) return { ok: false, msg: 'Step back — head at the top edge' };
   const frac = (footY - nose.y) / h;
-  if (frac < 0.45) return { ok: false, msg: 'Too small — move the phone closer' };
-  if (frac > 0.9) return { ok: false, msg: 'Too big — move the phone back' };
+  if (frac < 0.40) return { ok: false, msg: 'Too small — move the phone closer' };
+  if (frac > 0.70) return { ok: false, msg: 'Too big — move the phone back' };
   const cx = (lm[LM.L_HIP].x + lm[LM.R_HIP].x) / 2 / w;
   if (cx > 0.7) return { ok: false, msg: 'Step to your RIGHT' };
   if (cx < 0.3) return { ok: false, msg: 'Step to your LEFT' };

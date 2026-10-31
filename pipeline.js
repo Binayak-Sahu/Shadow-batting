@@ -6,7 +6,7 @@
 // Also: the session recorder (raw landmarks, no video) and its file format.
 
 import { APP_VERSION, mergeSettings } from './config.js';
-import { LandmarkSmoother, allVisible, framingCheck, essentialFor, frontSide } from './pose.js';
+import { LandmarkSmoother, allVisible, framingCheck, essentialFor, frontSide, FOOT_OFF_EDGE } from './pose.js';
 import { RepDetector, computeBaseline, computeRepMetrics, isStill, shoulderTurn, stanceToe } from './metrics.js';
 
 const CALIB_SECONDS = 2;
@@ -85,6 +85,13 @@ export class Pipeline {
   /** Reasons not to grade a rep (it would only give nonsense). null = fine. */
   _implausible(rep) {
     const vis = this.cfg.visibilityMin;
+    // Front foot off the bottom of the picture at landing: MediaPipe still
+    // reports it as "visible" but only guesses → toe/step/head numbers are junk.
+    const plant = rep.frames.filter((f) => f.ok && f.t >= rep.landT);
+    const low = plant.filter((f) => Math.max(f.lm[this.F.HEEL].y, f.lm[this.F.TOE].y) > FOOT_OFF_EDGE * f.h).length;
+    if (plant.length && low / plant.length > 0.3) {
+      return { reason: 'offscreen', text: 'Not counted — your front foot left the picture. Move the phone back' };
+    }
     const pre = rep.frames.filter((f) => f.ok && f.t < rep.startT && f.t > rep.startT - this.cfg.rep.preWindow);
     if (this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB) {
       const turn = shoulderTurn(pre, vis);

@@ -36,7 +36,10 @@ until its limits are tuned on real recordings.
 ## First session — 2 minutes
 
 1. Phone **upright** on a box/chair, lens about **1 m** high, **3–4 m** away, where the bowler would be, pointing straight at you.
-2. Stand in the middle of the picture; head to feet visible with **some space below your feet**.
+2. Stand in the middle of the picture with your **feet above the yellow dashed line** (about a fifth of
+   the screen of floor below them). Your front foot moves *down* the picture when you step; if it lands
+   off the bottom edge the rep is "Not counted". In the first sessions the phone was too close (~2 m)
+   and the front foot left the picture on many reps — 3 m or more works.
 3. Light **on** you, not behind you. Wear shoes, fitted trousers/shorts.
 4. Tap **Start session**, allow the camera, walk back, take your stance and **hold still 2 s** (ring fills).
 5. Check the edge labels: for a right-hander **OFF ▸** should be on the right of the screen (it's a mirror).

@@ -1,6 +1,6 @@
 // app.js — screens, camera, main loop, session, storage.
 import { APP_VERSION, APP_BUILD, SHOTS, SETTINGS_FIELDS, cloneDefaults, mergeSettings, getPath, setPath } from './config.js';
-import { createPoseTracker, LM, frontSide } from './pose.js';
+import { createPoseTracker, LM, frontSide, FEET_MAX, FOOT_OFF_EDGE } from './pose.js';
 import { summarizeSession, METRICS } from './metrics.js';
 import { ReplayBuffer, ReplayPlayer, makeView, drawSkeleton } from './replay.js';
 import { Pipeline, Recorder, quantizeRaw, quantizeWorld, quantizeTime, compactResult } from './pipeline.js';
@@ -630,6 +630,23 @@ function drawLive(frame) {
       ctx.lineTo(view.x(cx + (a.x - cx) * t), view.y(frame.h));
       ctx.stroke();
       ctx.setLineDash([]);
+    }
+  }
+  // Dashed "feet above here" line while setting up; red line near the bottom
+  // edge during reps (a foot landing below it isn't measured).
+  {
+    const setup = S.phase === 'setup' || S.phase === 'calib';
+    const y = view.y(frame.h * (setup ? FEET_MAX : FOOT_OFF_EDGE));
+    ctx.setLineDash(setup ? [14 * dpr, 10 * dpr] : [6 * dpr, 8 * dpr]);
+    ctx.strokeStyle = setup ? 'rgba(255,212,0,0.9)' : 'rgba(239,68,68,0.55)';
+    ctx.lineWidth = (setup ? 4 : 2) * dpr;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (setup) {
+      ctx.fillStyle = 'rgba(255,212,0,0.95)';
+      ctx.font = `700 ${15 * dpr}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('feet above this line', cw / 2, y - 8 * dpr);
     }
   }
   drawSkeleton(ctx, frame.lm, view, settings.visibilityMin, dpr, settings.handedness);

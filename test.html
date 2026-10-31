@@ -28,7 +28,7 @@ import { LandmarkSmoother, LM } from './pose.js';
 import { RepDetector, computeBaseline, computeRepMetrics, summarizeSession, METRICS } from './metrics.js';
 import { Pipeline, Recorder, runRecording, quantizeRaw, quantizeWorld, quantizeTime, compactResult } from './pipeline.js';
 
-const W = 480, H_IMG = 640, FPS = 30;
+const W = 480, H_IMG = 760, FPS = 30; // room below the feet, as the setup check now requires
 const cfg = cloneDefaults();
 const K = cfg.camHeightM / cfg.camDistM;
 
@@ -51,7 +51,7 @@ const HEIGHT = ((525 + 499) / 2 - 130) / 0.88; // matches metrics.js body-height
 /** one pose; ph = step progress 0..1; opts = fault sizes (in H or degrees) */
 function pose(ph, o, visKill = false) {
   const s = smooth(ph), bump = Math.sin(Math.PI * Math.max(0, Math.min(1, ph)));
-  const fwd = 40 * s;                          // px towards camera (down the image)
+  const fwd = (o.fwd ?? 40) * s;               // px towards camera (down the image)
   const lat = (o.lat || 0) * HEIGHT * OFF * s; // sideways (+lat = off side)
   const liftAnk = (0.03 + 0.6 * (o.knee || 0.02)) * HEIGHT * bump;
   const liftKnee = (o.knee || 0.02) * HEIGHT * bump;
@@ -399,6 +399,30 @@ test('Facing the phone between reps → no recalibration, square-on rep not coun
   expect(calibs === 1, 'recalibrated: ' + log.join(' → '));
   expect(log.filter((x) => x === 'rep').length === 2, log.join(' → '));
   return log.join(' → ');
+});
+
+test('Front foot lands off the bottom of the picture → rep not counted', () => {
+  seed = 51;
+  const frames = rawFrames([{ type: 'still', dur: 2.6, opts: {} }, ...oneRep({ toe: 10, fwd: 220 }), ...oneRep({ toe: 10 })]);
+  const p = new Pipeline(cfg);
+  const log = [];
+  for (const f of frames) {
+    const o = p.push(f.raw, f.world, f.t, W, H_IMG);
+    if (o.rejected) log.push('rejected: ' + o.rejected);
+    if (o.result) log.push('rep');
+  }
+  expect(log.length === 2 && log[0].includes('left the picture') && log[1] === 'rep', log.join(' → '));
+  return log.join(' → ');
+});
+
+test('Setup: feet too low in the picture → asked to move the phone back', () => {
+  const frames = rawFrames([{ type: 'still', dur: 1, opts: {} }]);
+  const low = frames.map((f) => ({ ...f, raw: f.raw.map((q) => ({ ...q, y: q.y + 0.12 })) }));
+  const p = new Pipeline(cfg);
+  let m = '';
+  for (const f of low) { const o = p.push(f.raw, f.world, f.t, W, H_IMG); if (o.msg) m = o.msg.text; }
+  expect(/phone back/.test(m) && p.phase === 'setup', 'msg=' + m + ' phase=' + p.phase);
+  return m;
 });
 
 const rows = document.getElementById('rows');
