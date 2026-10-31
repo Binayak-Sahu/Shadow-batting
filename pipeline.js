@@ -7,9 +7,13 @@
 
 import { APP_VERSION, mergeSettings } from './config.js';
 import { LandmarkSmoother, allVisible, framingCheck, essentialFor, frontSide } from './pose.js';
-import { RepDetector, computeBaseline, computeRepMetrics, isStill } from './metrics.js';
+import { RepDetector, computeBaseline, computeRepMetrics, isStill, shoulderTurn } from './metrics.js';
 
 const CALIB_SECONDS = 2;
+// Side-on check (3D shoulders): 90° = side-on like facing a bowler, 0° = chest to the phone.
+const MIN_TURN_CALIB = 40;   // calibrate only if at least this side-on
+const TURNED_TURN = 35;      // after calibrating side-on, below this for…
+const TURNED_SECONDS = 1.5;  // …this long while standing still = you turned → recalibrate
 const GESTURE_SECONDS = 2;
 
 /**
@@ -68,6 +72,7 @@ export class Pipeline {
     this.baseline = null;
     this.detector = null;
     this.notOkSince = null;
+    this.turnedSince = null;
     this.phase = 'setup';
     this.calibFrames = [];
     this.calibStart = null;
@@ -77,6 +82,7 @@ export class Pipeline {
   }
 
   recalibrate() {
+    this.turnedSince = null;
     this.baseline = null;
     this.detector = null;
     this.phase = 'setup';
@@ -132,6 +138,13 @@ export class Pipeline {
       const fc = framingCheck(frame.lm, w, h, vis, cfg.handedness);
       if (!fc.ok || !frame.ok) { go('setup'); out.msg = { text: fc.msg, kind: 'warn' }; return out; }
       const H = Math.max(10, (frame.lm[this.F.HEEL].y - frame.lm[0].y) / 0.88);
+      const turn = shoulderTurn(this.recent.filter((f) => f.t > t - 0.5), vis);
+      if (turn !== null && turn < MIN_TURN_CALIB) {
+        this.calibFrames = []; this.calibStart = null;
+        out.msg = { text: 'Stand side-on: front shoulder pointing at the phone', kind: 'warn' };
+        out.ring = 0;
+        return out;
+      }
       if (!isStill(this.recent, t, H, this.F.ANKLE)) {
         this.calibFrames = []; this.calibStart = null;
         out.msg = { text: 'Get in your stance and hold still', kind: '' };
@@ -165,7 +178,35 @@ export class Pipeline {
       out.clearWarn = true;
     }
     const ev = this.detector.update(frame);
+    // Turned to face the phone after calibrating side-on? Then every number
+    // would be wrong — recalibrate instead of measuring.
+    const d = this.detector;
+    if (!ev && frame.ok && this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB &&
+        d.state !== 'stepping' && d.state !== 'landed' && d.speed < cfg.rep.stillSpeed) {
+      const turn = shoulderTurn(this.recent.filter((f) => f.t > t - 0.5), vis);
+      if (turn !== null && turn < TURNED_TURN) {
+        if (this.turnedSince === null) this.turnedSince = t;
+        if (t - this.turnedSince >= TURNED_SECONDS) {
+          this.recalibrate(); go('setup');
+          out.turned = true;
+          out.msg = { text: 'You turned to face the phone — stand side-on again', kind: 'warn' };
+          return out;
+        }
+      } else this.turnedSince = null;
+    } else if (d.state === 'stepping') this.turnedSince = null;
     if (ev) {
+      if (ev.type === 'rep' && this.baseline.turn !== null && this.baseline.turn >= MIN_TURN_CALIB) {
+        // was this rep played from a square-on stance? Then don't grade it.
+        const pre = ev.rep.frames.filter((f) => f.ok && f.t < ev.rep.startT && f.t > ev.rep.startT - cfg.rep.preWindow);
+        const turn = shoulderTurn(pre, vis);
+        if (turn !== null && turn < TURNED_TURN) {
+          this.recalibrate(); go('setup');
+          out.turned = true;
+          out.ev = { type: 'abort', reason: 'turned' };
+          out.msg = { text: 'You turned to face the phone — stand side-on again', kind: 'warn' };
+          return out;
+        }
+      }
       out.ev = ev;
       if (ev.type === 'rep') out.result = computeRepMetrics(ev.rep, this.baseline, cfg);
     }

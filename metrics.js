@@ -69,6 +69,23 @@ function bodyHeightM(frames, visMin, F, B) {
   return h > 0.5 && h < 2.6 ? h : null;
 }
 
+/**
+ * How side-on you stand, from the 3D shoulders: 90° = side-on (front shoulder
+ * at the camera, like facing a bowler), 0° = chest square to the camera.
+ * null without world landmarks.
+ */
+export function shoulderTurn(frames, visMin) {
+  const l = avgWorld(frames, LM.L_SHOULDER, visMin), r = avgWorld(frames, LM.R_SHOULDER, visMin);
+  if (!l || !r) return null;
+  return (Math.atan2(Math.abs(l.z - r.z), Math.abs(l.x - r.x)) * 180) / Math.PI;
+}
+
+/** Distance between the ankles in 3D (metres). */
+function ankleGap3d(frames, visMin, F, B) {
+  const a = avgWorld(frames, F.ANKLE, visMin), b = avgWorld(frames, B.ANKLE, visMin);
+  return a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : null;
+}
+
 function between(frames, t0, t1) {
   return frames.filter((f) => f.ok && f.t >= t0 && f.t <= t1);
 }
@@ -110,9 +127,13 @@ export function computeBaseline(frames, cfg) {
   let offSource = 'default';
   if (Math.abs(s) > 0.03 * heightPx) { offSign = Math.sign(s); offSource = 'feet'; }
 
+  const heightM = bodyHeightM(good, vis, F, B); // null if no world landmarks
+  const gap3 = heightM ? ankleGap3d(good, vis, F, B) : null;
   return {
     heightPx,
-    heightM: bodyHeightM(good, vis, F, B), // null if no world landmarks
+    heightM,
+    turn: shoulderTurn(good, vis),         // how side-on the stance is (deg)
+    stanceWidth3: gap3 ? gap3 / heightM : null, // stance width in 3D, in H
     stanceWidth: ankleF && ankleB ? Math.hypot(ankleF.x - ankleB.x, ankleF.y - ankleB.y) / heightPx : null,
     nose,
     hipY: hipL && hipR ? (hipL.y + hipR.y) / 2 : hipL ? hipL.y : null,
@@ -464,20 +485,27 @@ export function computeRepMetrics(rep, baseline, cfg) {
     if (nose && knee && ankle) {
       const footX = (knee.x + ankle.x) / 2;
       const v = ((nose.x - footX) * off) / H;
-      const g = grade(Math.abs(v), th.headOverFoot);
-      const label = g === 'good' ? 'Over front foot' : v < 0 ? 'Falling to leg' : 'Leaning to off';
+      // Off side gets more room: the ball is met just in front of / outside the
+      // front pad, so a head slightly to the off side is right. Leg side is strict.
+      const g = grade(Math.abs(v), v >= 0 ? th.headOverFootOff : th.headOverFoot);
+      const label = g === 'good' ? 'Over front foot' : v < 0 ? 'Falling to leg' : 'Too far to off';
       m.headOverFoot = { value: v, grade: g, label, dir: v >= 0 ? 'off' : 'leg' };
     } else m.headOverFoot = null;
   }
 
   // 6) BASE STABILITY: stance width just before this rep vs calibration.
-  //    change = | width_now / width_calibration − 1 |
+  //    change = | width_now − width_calibration |  in H.
+  //    3D ankle distance when available: from the front the feet are one
+  //    behind the other, so the flat picture shows only a sliver of the width.
   {
+    const hm = bodyHeightM(pre, vis, F, B) || baseline.heightM;
+    const g3 = hm && baseline.stanceWidth3 ? ankleGap3d(pre, vis, F, B) : null;
     const aL = avgPoint(pre, F.ANKLE, vis);
     const aR = avgPoint(pre, B.ANKLE, vis);
-    if (aL && aR && baseline.stanceWidth) {
-      const w = Math.hypot(aL.x - aR.x, aL.y - aR.y) / H;
-      const v = Math.abs(w / baseline.stanceWidth - 1);
+    let v = null;
+    if (g3) v = Math.abs(g3 / hm - baseline.stanceWidth3);
+    else if (aL && aR && baseline.stanceWidth) v = Math.abs(Math.hypot(aL.x - aR.x, aL.y - aR.y) / H - baseline.stanceWidth);
+    if (v !== null) {
       const g = grade(v, th.baseWidth);
       m.baseWidth = { value: v, grade: g, label: g === 'good' ? 'Same base' : g === 'warn' ? 'Base changed' : 'Base very different' };
     } else m.baseWidth = null;
@@ -502,14 +530,16 @@ export function computeRepMetrics(rep, baseline, cfg) {
   return finishRep(m);
 }
 
+// Cues are spoken and shown big, so: short, plain words, and they say which
+// way to move. "The phone" = where the bowler is.
 const CUES = {
-  toe: (x) => (x.dir === 'leg' ? 'Toe to the bowler' : 'Toe to mid-off'),
-  stepWide: (x) => (x.dir === 'off' ? 'Step straight, not wide' : 'Step to the line'),
-  headOverFoot: () => 'Head to the ball',
-  kneeLift: () => 'Smaller step, slide it',
-  headBob: () => 'Head level, glide forward',
-  baseWidth: () => 'Reset your stance',
-  headForward: () => 'Lean in, head over front knee',
+  toe: (x) => (x.dir === 'leg' ? 'Front toe turned in — open it a little' : 'Point your front toe more at the phone'),
+  stepWide: (x) => (x.dir === 'off' ? 'Step straighter, towards the phone' : 'Don’t step across — step towards the phone'),
+  headOverFoot: (x) => (x.dir === 'leg' ? 'Head falling away — keep it over your front knee' : 'Head too far over — keep it above your front knee'),
+  kneeLift: () => 'Smaller step — slide the foot, don’t lift the knee',
+  headBob: () => 'Keep your head level as you step',
+  baseWidth: () => 'Go back to the same stance width',
+  headForward: () => 'Lean forward — head over your front knee',
 };
 
 /** Pick worst fault (red before amber, then priority order) and score. */

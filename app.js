@@ -290,7 +290,7 @@ function setPhase(p) {
   live.dataset.phase = p;
   $('silhouette').classList.toggle('hidden', !(p === 'setup' || p === 'calib'));
   $('calibRing').classList.toggle('hidden', p !== 'calib');
-  if (p === 'setup') { msg('Stand side-on in your stance, whole body inside the outline'); $('phaseLabel').textContent = 'SETUP'; }
+  if (p === 'setup') { msg('Stand side-on like facing a bowler: front shoulder to the phone'); $('phaseLabel').textContent = 'SETUP'; }
   if (p === 'calib') { $('phaseLabel').textContent = 'CALIBRATE'; }
   if (p === 'live') { $('phaseLabel').textContent = 'GET SET'; }
 }
@@ -481,6 +481,7 @@ function flashTip(text) {
 // Apply what the pipeline decided to the screen.
 function handleOut(out) {
   if (out.gesture) onGesture(out.gesture);
+  if (out.turned) { resetCalibrationUi(); speak('You turned. Stand side-on and hold still.'); beep('warn'); }
   if (out.phaseChanged) setPhase(out.phase);
   const gestureMsg = out.gesture && !out.gesture.fire;
   if (out.msg !== undefined && !gestureMsg) msg(out.msg && out.msg.text, out.msg && out.msg.kind);
@@ -632,7 +633,6 @@ function metricText(id, m) {
   if (!m) return '—';
   const cm = (v) => `${Math.round(Math.abs(v) * settings.heightCm)} cm`;
   if (id === 'toe') return `${Math.round(m.value)}°`;
-  if (id === 'baseWidth') return `${Math.round(m.value * 100)}%`;
   if (id === 'headForward') return `${cm(m.value)} ${m.value >= 0 ? 'ahead' : 'back'}`;
   return cm(m.value);
 }

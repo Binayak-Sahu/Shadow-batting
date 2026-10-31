@@ -15,15 +15,19 @@ After that it works offline. In Chrome: ⋮ menu → **Add to Home screen** for 
 
 ## What it measures (7 checks per rep)
 
-| Check | What it looks at | Cue when it's off |
+| Check | What it looks at | What it says when it's off |
 |---|---|---|
-| Front toe | direction of the front foot at landing, in 3D (0° = at the bowler) | Toe to mid-off |
-| Step line | front ankle sideways vs back ankle, landing vs stance | Step straight, not wide |
-| Head over foot | nose sideways vs front knee/ankle at the finish | Head to the ball |
-| Knee lift | how high the front knee rises during the step | Smaller step, slide it |
-| Head bob | up-and-down of the nose during the step (smooth forward travel is allowed) | Head level, glide forward |
-| Base | stance width before the rep vs calibration | Reset your stance |
-| Head forward *(new, 3D)* | at the finish, how far the head is **behind** the front knee | Lean in, head over front knee |
+| Front toe | direction of the front foot at landing, in 3D (0° = at the phone/bowler) | Point your front toe more at the phone |
+| Step line | front ankle sideways vs back ankle, landing vs stance | Step straighter, towards the phone |
+| Head over foot | head sideways vs front knee/ankle at the finish (more room to the off side) | Head falling away / too far over — keep it over your front knee |
+| Knee lift | how high the front knee rises during the step | Smaller step — slide the foot, don't lift the knee |
+| Head bob | up-and-down of the head during the step | Keep your head level as you step |
+| Base | stance width before the rep vs calibration (3D) | Go back to the same stance width |
+| Head forward *(3D)* | at the finish, how far the head is **behind** the front knee | Lean forward — head over your front knee |
+
+**Stand side-on**, as if the phone were the bowler (right-hander: left shoulder to the phone).
+The app checks this from your shoulders: it won't calibrate while you face the phone, and if
+you turn to face it later it stops grading and asks you to stand side-on again.
 
 Green ● ✓ = good, amber ▲ ! = close, red ■ ✕ = fix. The card shows the **worst** one
 (red before amber, in the order above). Head forward is new and last in priority

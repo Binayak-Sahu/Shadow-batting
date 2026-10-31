@@ -2,7 +2,7 @@
 // The Settings screen edits a copy of DEFAULTS and saves it in localStorage,
 // so you normally tune from the app, not by editing this file.
 
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 export const APP_BUILD = '__BUILD__'; // commit id, filled in by the GitHub Pages workflow
 
 // MediaPipe Tasks Vision, pinned to an exact version (not "latest").
@@ -78,8 +78,9 @@ export const DEFAULTS = {
     stepWide:     { good: 0.05, warn: 0.10 }, // H sideways vs stance
     kneeLift:     { good: 0.05, warn: 0.10 }, // H the front knee rises
     headBob:      { good: 0.025, warn: 0.045 },// H up-and-down of the nose during the step
-    headOverFoot: { good: 0.05, warn: 0.09 }, // H sideways gap nose ↔ front knee/ankle at finish
-    baseWidth:    { good: 0.15, warn: 0.30 }, // fraction change of stance width vs calibration
+    headOverFoot: { good: 0.05, warn: 0.09 }, // H head to the LEG side of front knee/ankle at finish
+    headOverFootOff: { good: 0.10, warn: 0.16 }, // H head to the OFF side (more room: ball is met beside the pad)
+    baseWidth:    { good: 0.05, warn: 0.10 }, // H change of stance width vs calibration (3D)
     headForward:  { good: 0.03, warn: 0.07 }, // H the head is BEHIND the front knee at finish (3D)
   },
 };
@@ -116,10 +117,12 @@ export const SETTINGS_FIELDS = [
   { key: 'thresholds.kneeLift.warn', label: 'Knee lift amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
   { key: 'thresholds.headBob.good', label: 'Head bob green ≤ (H)', type: 'number', min: 0.005, max: 0.2, step: 0.005 },
   { key: 'thresholds.headBob.warn', label: 'Head bob amber ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
-  { key: 'thresholds.headOverFoot.good', label: 'Head-over-foot green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
-  { key: 'thresholds.headOverFoot.warn', label: 'Head-over-foot amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
-  { key: 'thresholds.baseWidth.good', label: 'Base change green ≤ (fraction)', type: 'number', min: 0.02, max: 1, step: 0.01 },
-  { key: 'thresholds.baseWidth.warn', label: 'Base change amber ≤ (fraction)', type: 'number', min: 0.05, max: 1.5, step: 0.01 },
+  { key: 'thresholds.headOverFoot.good', label: 'Head to leg side green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.headOverFoot.warn', label: 'Head to leg side amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
+  { key: 'thresholds.headOverFootOff.good', label: 'Head to off side green ≤ (H)', type: 'number', min: 0.01, max: 0.4, step: 0.005 },
+  { key: 'thresholds.headOverFootOff.warn', label: 'Head to off side amber ≤ (H)', type: 'number', min: 0.02, max: 0.5, step: 0.005 },
+  { key: 'thresholds.baseWidth.good', label: 'Base change green ≤ (H)', type: 'number', min: 0.01, max: 0.3, step: 0.005 },
+  { key: 'thresholds.baseWidth.warn', label: 'Base change amber ≤ (H)', type: 'number', min: 0.02, max: 0.4, step: 0.005 },
   { key: 'thresholds.headForward.good', label: 'Head behind knee green ≤ (H)', type: 'number', min: 0.005, max: 0.3, step: 0.005 },
   { key: 'thresholds.headForward.warn', label: 'Head behind knee amber ≤ (H)', type: 'number', min: 0.01, max: 0.4, step: 0.005 },
   { group: 'Rep detection (advanced)' },
@@ -136,9 +139,10 @@ export function cloneDefaults() {
 }
 // Bump SETTINGS_VERSION when a new default must override what an older
 // version of the app saved on the phone; add the change to MIGRATIONS.
-export const SETTINGS_VERSION = 2;
+export const SETTINGS_VERSION = 3;
 const MIGRATIONS = {
   2: (s) => { s.model = 'heavy'; s.voice = true; }, // v1.1: Heavy model + spoken cues are the new defaults
+  3: (s) => { if (s.thresholds) delete s.thresholds.baseWidth; }, // v1.2: base is now measured in H, not a fraction
 };
 export function mergeSettings(saved) {
   if (saved && typeof saved === 'object') {

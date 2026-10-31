@@ -99,6 +99,10 @@ function worldPose(ph, o) {
     const [x, y] = img(p); P[i] = { x, y, z: 0 };
   }
   P[0].z = noseZ; P[25].z = kneeZ; P[27].z = heelZ + 0.05; P[29].z = heelZ;
+  // side-on stance: front (left) shoulder nearer the camera; o.square = chest turned to the camera
+  P[11].z = o.square ? 0 : -0.16; P[12].z = o.square ? 0 : 0.16;
+  if (o.square) { P[11].x = 0.18; P[12].x = -0.18; }
+  P[28].z = 0.25; // back ankle behind the front one
   P[31] = { x: P[29].x + Math.sin(phi) * 0.25 * OFF, y: P[29].y, z: heelZ - Math.cos(phi) * 0.25 };
   const out = [];
   for (let i = 0; i < 33; i++) {
@@ -172,13 +176,13 @@ test('Good rep → 1 rep, all green', () => {
   return fmt(r.metrics);
 });
 
-test('Toe to cover (65°) → toe RED, cue "Toe to mid-off"', () => {
+test('Toe to cover (65°) → toe RED, cue "toe more at the phone"', () => {
   const { reps } = run(oneRep({ toe: 65, lat: 0.01, knee: 0.02, bob: 0.005 }));
   expect(reps.length === 1, 'reps=' + reps.length);
   const r = reps[0];
   expect(r.metrics.toe.grade === 'bad', fmt(r.metrics));
   expect(Math.abs(r.metrics.toe.value - 65) < 10, 'angle off by >10°: ' + r.metrics.toe.value.toFixed(1));
-  expect(r.cue === 'Toe to mid-off', 'cue=' + r.cue);
+  expect(r.cue === 'Point your front toe more at the phone', 'cue=' + r.cue);
   return fmt(r.metrics) + ' → ' + r.cue;
 });
 
@@ -194,7 +198,7 @@ test('Wide step (0.15 H to off) → step RED', () => {
   expect(reps.length === 1, 'reps=' + reps.length);
   const r = reps[0];
   expect(r.metrics.stepWide.grade === 'bad' && r.metrics.stepWide.dir === 'off', fmt(r.metrics));
-  expect(r.cue === 'Step straight, not wide', 'cue=' + r.cue);
+  expect(r.cue === 'Step straighter, towards the phone', 'cue=' + r.cue);
   return fmt(r.metrics) + ' → ' + r.cue;
 });
 
@@ -204,7 +208,7 @@ test('High stamp (knee 0.15 H, head bob 0.06 H) → knee + bob RED', () => {
   const r = reps[0];
   expect(r.metrics.kneeLift.grade === 'bad', fmt(r.metrics));
   expect(r.metrics.headBob.grade === 'bad', fmt(r.metrics));
-  expect(r.cue === 'Smaller step, slide it', 'cue=' + r.cue);
+  expect(r.cue === 'Smaller step — slide the foot, don’t lift the knee', 'cue=' + r.cue);
   return fmt(r.metrics) + ' → ' + r.cue;
 });
 
@@ -213,7 +217,7 @@ test('Head falls to leg side (0.13 H) → head RED', () => {
   expect(reps.length === 1, 'reps=' + reps.length);
   const r = reps[0];
   expect(r.metrics.headOverFoot.grade === 'bad' && r.metrics.headOverFoot.dir === 'leg', fmt(r.metrics));
-  expect(r.cue === 'Head to the ball', 'cue=' + r.cue);
+  expect(r.cue === 'Head falling away — keep it over your front knee', 'cue=' + r.cue);
   return fmt(r.metrics) + ' → ' + r.cue;
 });
 
@@ -340,7 +344,7 @@ test('3D: head 0.10 H behind front knee → head forward RED', () => {
   expect(r.length === 1, 'reps=' + r.length);
   const h = r[0].metrics.headForward;
   expect(h && h.g === 'bad' && h.v < -0.07, 'headForward=' + JSON.stringify(h));
-  expect(r[0].cue === 'Lean in, head over front knee', 'cue=' + r[0].cue);
+  expect(r[0].cue === 'Lean forward — head over your front knee', 'cue=' + r[0].cue);
   return fmtc(r[0].metrics) + ' → ' + r[0].cue;
 });
 
@@ -372,6 +376,27 @@ test('Gestures: one hand up 2 s → recalibrate, both hands up 2 s → finish', 
   for (const f of frames) { const o = p2.push(f.raw, f.world, f.t, W, H_IMG); if (o.gesture) any = true; }
   expect(!any, 'gesture fired with gestures off');
   return fired.join(', ');
+});
+
+test('Turned to face the phone → recalibrate, square-on reps not graded', () => {
+  seed = 41;
+  const side = rawFrames([{ type: 'still', dur: 2.6, opts: {} }, ...oneRep({ toe: 10 })]);
+  const sq = rawFrames([{ type: 'still', dur: 3, opts: { square: true } }, ...oneRep({ toe: 10, square: true })]);
+  const t0 = side[side.length - 1].t + 1 / FPS;
+  const frames = side.concat(sq.map((f) => ({ ...f, t: quantizeTime(f.t + t0) })));
+  const p = new Pipeline(cfg);
+  const log = [];
+  let reps = 0;
+  for (const f of frames) {
+    const o = p.push(f.raw, f.world, f.t, W, H_IMG);
+    if (o.calibrated) log.push(`calibrated(turn ${o.calibrated.turn.toFixed(0)}°)`);
+    if (o.turned) log.push('turned→recalibrate');
+    if (o.result) { reps++; log.push('rep'); }
+  }
+  expect(reps === 1, 'reps=' + reps + ' ' + log.join(' → '));
+  expect(log.includes('turned→recalibrate'), log.join(' → '));
+  expect(p.phase !== 'live', 'calibrated while square-on: ' + log.join(' → '));
+  return log.join(' → ');
 });
 
 const rows = document.getElementById('rows');
